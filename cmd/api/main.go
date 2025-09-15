@@ -1,0 +1,339 @@
+package main
+
+import (
+	"database/sql"
+	"log"
+	"net/http"
+	"os"
+
+	"github.com/gin-gonic/gin"
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/google/uuid"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+	_ "github.com/yashjain/konnect/docs"
+)
+
+type Service struct {
+	ID            string `json:"id" db:"id"`
+	Name          string `json:"name" db:"name"`
+	Slug          string `json:"slug" db:"slug"`
+	Description   string `json:"description" db:"description"`
+	CreatedAt     string `json:"created_at" db:"created_at"`
+	UpdatedAt     string `json:"updated_at" db:"updated_at"`
+	VersionsCount int    `json:"versions_count" db:"versions_count"`
+}
+
+type Version struct {
+	ID        string `json:"id" db:"id"`
+	ServiceID string `json:"service_id" db:"service_id"`
+	Semver    string `json:"semver" db:"semver"`
+	Status    string `json:"status" db:"status"`
+	Changelog string `json:"changelog" db:"changelog"`
+	CreatedAt string `json:"created_at" db:"created_at"`
+}
+
+var db *sql.DB
+
+// @title Services API
+// @version 1.0
+// @description A REST API for managing services and their versions
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.url http://www.swagger.io/support
+// @contact.email support@swagger.io
+
+// @license.name MIT
+// @license.url https://opensource.org/licenses/MIT
+
+// @host localhost:8080
+// @BasePath /api/v1
+// @schemes http https
+
+func main() {
+	// Initialize database connection
+	dsn := os.Getenv("MYSQL_DSN")
+	if dsn == "" {
+		dsn = "app:app@tcp(127.0.0.1:3306)/servicesdb?parseTime=true&charset=utf8mb4&collation=utf8mb4_0900_ai_ci"
+	}
+
+	var err error
+	db, err = sql.Open("mysql", dsn)
+	if err != nil {
+		log.Fatal("Failed to connect to database:", err)
+	}
+	defer db.Close()
+
+	if err = db.Ping(); err != nil {
+		log.Fatal("Failed to ping database:", err)
+	}
+
+	// Set up Gin router
+	if os.Getenv("LOG_LEVEL") == "info" {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	r := gin.Default()
+
+	// Swagger endpoint
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+	// Health check endpoint
+	r.GET("/health", healthCheck)
+
+	// API routes
+	api := r.Group("/api/v1")
+	{
+		api.GET("/services", getServices)
+		api.POST("/services", createService)
+		api.GET("/services/:id", getService)
+		api.PUT("/services/:id", updateService)
+		api.DELETE("/services/:id", deleteService)
+		
+		api.GET("/services/:id/versions", getVersions)
+		api.POST("/services/:id/versions", createVersion)
+	}
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	log.Printf("Server starting on port %s", port)
+	log.Fatal(http.ListenAndServe(":"+port, r))
+}
+
+// healthCheck godoc
+// @Summary Health check endpoint
+// @Description Check if the API is running
+// @Tags health
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /health [get]
+func healthCheck(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// getServices godoc
+// @Summary Get all services
+// @Description Get a list of all services
+// @Tags services
+// @Produce json
+// @Success 200 {array} Service
+// @Failure 500 {object} map[string]interface{}
+// @Router /services [get]
+func getServices(c *gin.Context) {
+	rows, err := db.Query("SELECT id, name, slug, description, created_at, updated_at, versions_count FROM services ORDER BY created_at DESC")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	var services []Service
+	for rows.Next() {
+		var s Service
+		err := rows.Scan(&s.ID, &s.Name, &s.Slug, &s.Description, &s.CreatedAt, &s.UpdatedAt, &s.VersionsCount)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		services = append(services, s)
+	}
+
+	c.JSON(http.StatusOK, services)
+}
+
+// createService godoc
+// @Summary Create a new service
+// @Description Create a new service with the provided information
+// @Tags services
+// @Accept json
+// @Produce json
+// @Param service body Service true "Service object"
+// @Success 201 {object} Service
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /services [post]
+func createService(c *gin.Context) {
+	var service Service
+	if err := c.ShouldBindJSON(&service); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	service.ID = uuid.New().String()
+
+	_, err := db.Exec("INSERT INTO services (id, name, slug, description) VALUES (?, ?, ?, ?)",
+		service.ID, service.Name, service.Slug, service.Description)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, service)
+}
+
+// getService godoc
+// @Summary Get a service by ID
+// @Description Get a specific service by its ID
+// @Tags services
+// @Produce json
+// @Param id path string true "Service ID"
+// @Success 200 {object} Service
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /services/{id} [get]
+func getService(c *gin.Context) {
+	id := c.Param("id")
+
+	var service Service
+	err := db.QueryRow("SELECT id, name, slug, description, created_at, updated_at, versions_count FROM services WHERE id = ?", id).
+		Scan(&service.ID, &service.Name, &service.Slug, &service.Description, &service.CreatedAt, &service.UpdatedAt, &service.VersionsCount)
+
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, service)
+}
+
+// updateService godoc
+// @Summary Update a service
+// @Description Update a service with the provided information
+// @Tags services
+// @Accept json
+// @Produce json
+// @Param id path string true "Service ID"
+// @Param service body Service true "Service object"
+// @Success 200 {object} Service
+// @Failure 400 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /services/{id} [put]
+func updateService(c *gin.Context) {
+	id := c.Param("id")
+
+	var service Service
+	if err := c.ShouldBindJSON(&service); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	result, err := db.Exec("UPDATE services SET name = ?, slug = ?, description = ? WHERE id = ?",
+		service.Name, service.Slug, service.Description, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
+		return
+	}
+
+	service.ID = id
+	c.JSON(http.StatusOK, service)
+}
+
+// deleteService godoc
+// @Summary Delete a service
+// @Description Delete a service by its ID
+// @Tags services
+// @Produce json
+// @Param id path string true "Service ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /services/{id} [delete]
+func deleteService(c *gin.Context) {
+	id := c.Param("id")
+
+	result, err := db.Exec("DELETE FROM services WHERE id = ?", id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Service deleted"})
+}
+
+// getVersions godoc
+// @Summary Get versions for a service
+// @Description Get all versions for a specific service
+// @Tags versions
+// @Produce json
+// @Param id path string true "Service ID"
+// @Success 200 {array} Version
+// @Failure 500 {object} map[string]interface{}
+// @Router /services/{id}/versions [get]
+func getVersions(c *gin.Context) {
+	serviceID := c.Param("id")
+
+	rows, err := db.Query("SELECT id, service_id, semver, status, changelog, created_at FROM versions WHERE service_id = ? ORDER BY created_at DESC", serviceID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	var versions []Version
+	for rows.Next() {
+		var v Version
+		err := rows.Scan(&v.ID, &v.ServiceID, &v.Semver, &v.Status, &v.Changelog, &v.CreatedAt)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		versions = append(versions, v)
+	}
+
+	c.JSON(http.StatusOK, versions)
+}
+
+// createVersion godoc
+// @Summary Create a new version
+// @Description Create a new version for a specific service
+// @Tags versions
+// @Accept json
+// @Produce json
+// @Param id path string true "Service ID"
+// @Param version body Version true "Version object"
+// @Success 201 {object} Version
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /services/{id}/versions [post]
+func createVersion(c *gin.Context) {
+	serviceID := c.Param("id")
+
+	var version Version
+	if err := c.ShouldBindJSON(&version); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	version.ID = uuid.New().String()
+	version.ServiceID = serviceID
+
+	_, err := db.Exec("INSERT INTO versions (id, service_id, semver, status, changelog) VALUES (?, ?, ?, ?, ?)",
+		version.ID, version.ServiceID, version.Semver, version.Status, version.Changelog)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, version)
+}
