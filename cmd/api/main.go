@@ -71,12 +71,6 @@ func main() {
 		log.Fatal("Failed to ping database:", err)
 	}
 
-	defer func() {
-		if err := db.Close(); err != nil {
-			log.Printf("Error closing database: %v", err)
-		}
-	}()
-
 	// Set up Gin router
 	if os.Getenv("LOG_LEVEL") == "info" {
 		gin.SetMode(gin.ReleaseMode)
@@ -107,6 +101,13 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
+
+	// Set up database cleanup before starting server
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.Printf("Error closing database: %v", err)
+		}
+	}()
 
 	log.Printf("Server starting on port %s", port)
 	if err := http.ListenAndServe(":"+port, r); err != nil {
