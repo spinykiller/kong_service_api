@@ -109,7 +109,9 @@ func main() {
 	}
 
 	log.Printf("Server starting on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, r))
+	if err := http.ListenAndServe(":"+port, r); err != nil {
+		log.Fatal("Server failed to start:", err)
+	}
 }
 
 // healthCheck godoc
