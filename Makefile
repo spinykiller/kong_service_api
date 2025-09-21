@@ -21,8 +21,7 @@ build: docs
 
 ## Run (local, requires MySQL running)
 run:
-	MYSQL_DSN?=app:app@tcp(127.0.0.1:3306)/servicesdb?parseTime=true&charset=utf8mb4&collation=utf8mb4_0900_ai_ci
-	PORT=$(PORT) ./$(BIN)
+	MYSQL_DSN=app:app@tcp(127.0.0.1:3306)/servicesdb?parseTime=true&charset=utf8mb4&collation=utf8mb4_0900_ai_ci PORT=$(PORT) ./$(BIN)
 
 ## Dev: compose up db + api (builds image)
 dev:
@@ -65,7 +64,7 @@ docker-push:
 	docker push $(IMAGE)
 
 ## DB migrations (using goose; set DB_DSN if different)
-DB_DSN ?= app:app@tcp(127.0.0.1:3306)/servicesdb?parseTime=true&multiStatements=true
+DB_DSN ?= app:app@tcp(localhost:3306)/servicesdb?parseTime=true&multiStatements=true
 migrate-up:
 	$(GOOSE) -dir ./migrations mysql "$(DB_DSN)" up
 
