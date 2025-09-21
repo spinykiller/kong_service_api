@@ -90,7 +90,7 @@ func main() {
 		api.GET("/services/:id", getService)
 		api.PUT("/services/:id", updateService)
 		api.DELETE("/services/:id", deleteService)
-		
+
 		api.GET("/services/:id/versions", getVersions)
 		api.POST("/services/:id/versions", createVersion)
 	}
@@ -328,9 +328,31 @@ func createVersion(c *gin.Context) {
 	version.ID = uuid.New().String()
 	version.ServiceID = serviceID
 
-	_, err := db.Exec("INSERT INTO versions (id, service_id, semver, status, changelog) VALUES (?, ?, ?, ?, ?)",
+	// Start a transaction to ensure atomicity
+	tx, err := db.Begin()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer tx.Rollback()
+
+	// Insert the version
+	_, err = tx.Exec("INSERT INTO versions (id, service_id, semver, status, changelog) VALUES (?, ?, ?, ?, ?)",
 		version.ID, version.ServiceID, version.Semver, version.Status, version.Changelog)
 	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Update the versions_count in the services table
+	_, err = tx.Exec("UPDATE services SET versions_count = versions_count + 1 WHERE id = ?", serviceID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Commit the transaction
+	if err = tx.Commit(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

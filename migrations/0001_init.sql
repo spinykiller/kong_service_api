@@ -28,12 +28,6 @@ CREATE TABLE versions (
 -- Optional denormalized count (comment out if not desired)
 ALTER TABLE services ADD COLUMN versions_count INT NOT NULL DEFAULT 0;
 
-CREATE TRIGGER trg_versions_inc AFTER INSERT ON versions FOR EACH ROW UPDATE services SET versions_count = versions_count + 1 WHERE id = NEW.service_id;
-
-CREATE TRIGGER trg_versions_dec AFTER DELETE ON versions FOR EACH ROW UPDATE services SET versions_count = versions_count - 1 WHERE id = OLD.service_id;
-
 -- +goose Down
-DROP TRIGGER IF EXISTS trg_versions_inc;
-DROP TRIGGER IF EXISTS trg_versions_dec;
 DROP TABLE IF EXISTS versions;
 DROP TABLE IF EXISTS services;
