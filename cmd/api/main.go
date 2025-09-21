@@ -63,15 +63,19 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
+
+	if err = db.Ping(); err != nil {
+		if closeErr := db.Close(); closeErr != nil {
+			log.Printf("Error closing database: %v", closeErr)
+		}
+		log.Fatal("Failed to ping database:", err)
+	}
+
 	defer func() {
 		if err := db.Close(); err != nil {
 			log.Printf("Error closing database: %v", err)
 		}
 	}()
-
-	if err = db.Ping(); err != nil {
-		log.Fatal("Failed to ping database:", err)
-	}
 
 	// Set up Gin router
 	if os.Getenv("LOG_LEVEL") == "info" {
