@@ -1,0 +1,1857 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>api: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/yashjain/konnect/cmd/api/integration_test_separate.go (0.0%)</option>
+				
+				<option value="file1">github.com/yashjain/konnect/cmd/api/main.go (8.4%)</option>
+				
+				<option value="file2">github.com/yashjain/konnect/docs/docs.go (100.0%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">no coverage</span>
+				<span class="cov1">low coverage</span>
+				<span class="cov2">*</span>
+				<span class="cov3">*</span>
+				<span class="cov4">*</span>
+				<span class="cov5">*</span>
+				<span class="cov6">*</span>
+				<span class="cov7">*</span>
+				<span class="cov8">*</span>
+				<span class="cov9">*</span>
+				<span class="cov10">high coverage</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package main
+
+import (
+        "bytes"
+        "database/sql"
+        "encoding/json"
+        "fmt"
+        "net/http"
+        "net/http/httptest"
+        "os"
+        "testing"
+
+        "github.com/gin-gonic/gin"
+        _ "github.com/go-sql-driver/mysql"
+        "github.com/stretchr/testify/assert"
+        "github.com/stretchr/testify/require"
+)
+
+var testDB *sql.DB
+
+func TestMainIntegration(m *testing.M) <span class="cov0" title="0">{
+        // Setup test database
+        setupTestDB()
+
+        // Run tests
+        code := m.Run()
+
+        // Cleanup
+        cleanupTestDB()
+
+        os.Exit(code)
+}</span>
+
+func setupTestDB() <span class="cov0" title="0">{
+        // Use test database or create one
+        dsn := os.Getenv("TEST_MYSQL_DSN")
+        if dsn == "" </span><span class="cov0" title="0">{
+                dsn = "app:app@tcp(127.0.0.1:3306)/servicesdb_test?parseTime=true&amp;charset=utf8mb4&amp;collation=utf8mb4_0900_ai_ci"
+        }</span>
+
+        <span class="cov0" title="0">var err error
+        testDB, err = sql.Open("mysql", dsn)
+        if err != nil </span><span class="cov0" title="0">{
+                panic(fmt.Sprintf("Failed to connect to test database: %v", err))</span>
+        }
+
+        <span class="cov0" title="0">if err = testDB.Ping(); err != nil </span><span class="cov0" title="0">{
+                panic(fmt.Sprintf("Failed to ping test database: %v", err))</span>
+        }
+
+        // Set global db variable for tests
+        <span class="cov0" title="0">db = testDB
+
+        // Create tables
+        createTestTables()
+
+        // Seed test data
+        seedTestData()</span>
+}
+
+func cleanupTestDB() <span class="cov0" title="0">{
+        if testDB != nil </span><span class="cov0" title="0">{
+                // Clean up test data
+                testDB.Exec("DELETE FROM versions")
+                testDB.Exec("DELETE FROM services")
+                testDB.Close()
+        }</span>
+}
+
+func createTestTables() <span class="cov0" title="0">{
+        // Create services table
+        servicesSQL := `
+        CREATE TABLE IF NOT EXISTS services (
+                id            CHAR(36)     NOT NULL,
+                name          VARCHAR(255) NOT NULL,
+                slug          VARCHAR(255) NOT NULL,
+                description   TEXT NULL,
+                created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                versions_count INT NOT NULL DEFAULT 0,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_services_name (name),
+                UNIQUE KEY uq_services_slug (slug),
+                FULLTEXT KEY ft_services_name_desc (name, description)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+        `
+
+        // Create versions table
+        versionsSQL := `
+        CREATE TABLE IF NOT EXISTS versions (
+                id          CHAR(36)    NOT NULL,
+                service_id  CHAR(36)    NOT NULL,
+                semver      VARCHAR(64) NOT NULL,
+                status      ENUM('draft','released','deprecated') NOT NULL,
+                changelog   TEXT NULL,
+                created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_versions_service_id (service_id),
+                KEY idx_versions_status (status),
+                CONSTRAINT fk_versions_service FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+        `
+
+        testDB.Exec(servicesSQL)
+        testDB.Exec(versionsSQL)
+}</span>
+
+func seedTestData() <span class="cov0" title="0">{
+        // Insert test services
+        services := []Service{
+                {ID: "service-1", Name: "Test Service 1", Slug: "test-service-1", Description: "First test service"},
+                {ID: "service-2", Name: "Test Service 2", Slug: "test-service-2", Description: "Second test service"},
+                {ID: "service-3", Name: "Notification Service", Slug: "notification-service", Description: "Service for sending notifications"},
+        }
+
+        for _, service := range services </span><span class="cov0" title="0">{
+                testDB.Exec("INSERT INTO services (id, name, slug, description) VALUES (?, ?, ?, ?)",
+                        service.ID, service.Name, service.Slug, service.Description)
+        }</span>
+
+        // Insert test versions
+        <span class="cov0" title="0">versions := []Version{
+                {ID: "version-1", ServiceID: "service-1", Semver: "1.0.0", Status: "released", Changelog: "Initial release"},
+                {ID: "version-2", ServiceID: "service-1", Semver: "1.1.0", Status: "released", Changelog: "Minor update"},
+                {ID: "version-3", ServiceID: "service-2", Semver: "0.1.0", Status: "draft", Changelog: "Work in progress"},
+                {ID: "version-4", ServiceID: "service-3", Semver: "2.0.0", Status: "released", Changelog: "Major update"},
+        }
+
+        for _, version := range versions </span><span class="cov0" title="0">{
+                testDB.Exec("INSERT INTO versions (id, service_id, semver, status, changelog) VALUES (?, ?, ?, ?, ?)",
+                        version.ID, version.ServiceID, version.Semver, version.Status, version.Changelog)
+        }</span>
+
+        // Update versions_count
+        <span class="cov0" title="0">testDB.Exec("UPDATE services SET versions_count = (SELECT COUNT(*) FROM versions WHERE service_id = services.id)")</span>
+}
+
+func setupTestRouter() *gin.Engine <span class="cov0" title="0">{
+        gin.SetMode(gin.TestMode)
+        router := gin.New()
+
+        // Add routes
+        router.GET("/health", healthCheck)
+        router.GET("/api/v1/services", getServices)
+        router.GET("/api/v1/services/search", searchServices)
+        router.POST("/api/v1/services", createService)
+        router.GET("/api/v1/services/:id", getService)
+        router.PUT("/api/v1/services/:id", updateService)
+        router.DELETE("/api/v1/services/:id", deleteService)
+        router.GET("/api/v1/services/:id/versions", getVersions)
+        router.POST("/api/v1/services/:id/versions", createVersion)
+
+        return router
+}</span>
+
+func TestHealthCheckIntegration(t *testing.T) <span class="cov0" title="0">{
+        router := setupTestRouter()
+
+        req, _ := http.NewRequest("GET", "/health", nil)
+        w := httptest.NewRecorder()
+        router.ServeHTTP(w, req)
+
+        assert.Equal(t, http.StatusOK, w.Code)
+
+        var response map[string]interface{}
+        err := json.Unmarshal(w.Body.Bytes(), &amp;response)
+        require.NoError(t, err)
+        assert.Equal(t, "ok", response["status"])
+}</span>
+
+func TestGetServicesIntegration(t *testing.T) <span class="cov0" title="0">{
+        router := setupTestRouter()
+
+        tests := []struct {
+                name           string
+                queryParams    string
+                expectedStatus int
+                expectedCount  int
+        }{
+                {
+                        name:           "get all services",
+                        queryParams:    "",
+                        expectedStatus: http.StatusOK,
+                        expectedCount:  3,
+                },
+                {
+                        name:           "get services with pagination",
+                        queryParams:    "?page=1&amp;page_size=2",
+                        expectedStatus: http.StatusOK,
+                        expectedCount:  2,
+                },
+                {
+                        name:           "get second page",
+                        queryParams:    "?page=2&amp;page_size=2",
+                        expectedStatus: http.StatusOK,
+                        expectedCount:  1,
+                },
+                {
+                        name:           "invalid page size",
+                        queryParams:    "?page_size=101",
+                        expectedStatus: http.StatusBadRequest,
+                        expectedCount:  0,
+                },
+        }
+
+        for _, tt := range tests </span><span class="cov0" title="0">{
+                t.Run(tt.name, func(t *testing.T) </span><span class="cov0" title="0">{
+                        req, _ := http.NewRequest("GET", "/api/v1/services"+tt.queryParams, nil)
+                        w := httptest.NewRecorder()
+                        router.ServeHTTP(w, req)
+
+                        assert.Equal(t, tt.expectedStatus, w.Code)
+
+                        if tt.expectedStatus == http.StatusOK </span><span class="cov0" title="0">{
+                                var response PaginatedResponse
+                                err := json.Unmarshal(w.Body.Bytes(), &amp;response)
+                                require.NoError(t, err)
+
+                                if tt.expectedCount &gt; 0 </span><span class="cov0" title="0">{
+                                        services := response.Data.([]interface{})
+                                        assert.Len(t, services, tt.expectedCount)
+                                }</span>
+
+                                <span class="cov0" title="0">assert.NotNil(t, response.Pagination)</span>
+                        }
+                })
+        }
+}
+
+func TestSearchServicesIntegration(t *testing.T) <span class="cov0" title="0">{
+        router := setupTestRouter()
+
+        tests := []struct {
+                name           string
+                queryParams    string
+                expectedStatus int
+                expectedCount  int
+        }{
+                {
+                        name:           "search for notification",
+                        queryParams:    "?q=notification",
+                        expectedStatus: http.StatusOK,
+                        expectedCount:  1,
+                },
+                {
+                        name:           "search for test",
+                        queryParams:    "?q=test",
+                        expectedStatus: http.StatusOK,
+                        expectedCount:  2,
+                },
+                {
+                        name:           "search with pagination",
+                        queryParams:    "?q=test&amp;page=1&amp;page_size=1",
+                        expectedStatus: http.StatusOK,
+                        expectedCount:  1,
+                },
+                {
+                        name:           "search with no results",
+                        queryParams:    "?q=nonexistent",
+                        expectedStatus: http.StatusOK,
+                        expectedCount:  0,
+                },
+                {
+                        name:           "missing search query",
+                        queryParams:    "",
+                        expectedStatus: http.StatusBadRequest,
+                        expectedCount:  0,
+                },
+        }
+
+        for _, tt := range tests </span><span class="cov0" title="0">{
+                t.Run(tt.name, func(t *testing.T) </span><span class="cov0" title="0">{
+                        req, _ := http.NewRequest("GET", "/api/v1/services/search"+tt.queryParams, nil)
+                        w := httptest.NewRecorder()
+                        router.ServeHTTP(w, req)
+
+                        assert.Equal(t, tt.expectedStatus, w.Code)
+
+                        if tt.expectedStatus == http.StatusOK </span><span class="cov0" title="0">{
+                                var response PaginatedResponse
+                                err := json.Unmarshal(w.Body.Bytes(), &amp;response)
+                                require.NoError(t, err)
+
+                                services := response.Data.([]interface{})
+                                assert.Len(t, services, tt.expectedCount)
+                                assert.NotNil(t, response.Pagination)
+                        }</span>
+                })
+        }
+}
+
+func TestCreateServiceIntegration(t *testing.T) <span class="cov0" title="0">{
+        router := setupTestRouter()
+
+        tests := []struct {
+                name           string
+                serviceData    Service
+                expectedStatus int
+        }{
+                {
+                        name: "valid service",
+                        serviceData: Service{
+                                Name:        "New Test Service",
+                                Slug:        "new-test-service",
+                                Description: "A new test service",
+                        },
+                        expectedStatus: http.StatusCreated,
+                },
+                {
+                        name: "service with duplicate name",
+                        serviceData: Service{
+                                Name:        "Test Service 1", // Already exists
+                                Slug:        "duplicate-service",
+                                Description: "Duplicate service",
+                        },
+                        expectedStatus: http.StatusInternalServerError,
+                },
+                {
+                        name: "service with duplicate slug",
+                        serviceData: Service{
+                                Name:        "Unique Service",
+                                Slug:        "test-service-1", // Already exists
+                                Description: "Duplicate slug service",
+                        },
+                        expectedStatus: http.StatusInternalServerError,
+                },
+        }
+
+        for _, tt := range tests </span><span class="cov0" title="0">{
+                t.Run(tt.name, func(t *testing.T) </span><span class="cov0" title="0">{
+                        jsonData, _ := json.Marshal(tt.serviceData)
+                        req, _ := http.NewRequest("POST", "/api/v1/services", bytes.NewBuffer(jsonData))
+                        req.Header.Set("Content-Type", "application/json")
+
+                        w := httptest.NewRecorder()
+                        router.ServeHTTP(w, req)
+
+                        assert.Equal(t, tt.expectedStatus, w.Code)
+
+                        if tt.expectedStatus == http.StatusCreated </span><span class="cov0" title="0">{
+                                var response Service
+                                err := json.Unmarshal(w.Body.Bytes(), &amp;response)
+                                require.NoError(t, err)
+                                assert.NotEmpty(t, response.ID)
+                                assert.Equal(t, tt.serviceData.Name, response.Name)
+                                assert.Equal(t, tt.serviceData.Slug, response.Slug)
+                                assert.Equal(t, tt.serviceData.Description, response.Description)
+                        }</span>
+                })
+        }
+}
+
+func TestGetServiceIntegration(t *testing.T) <span class="cov0" title="0">{
+        router := setupTestRouter()
+
+        tests := []struct {
+                name           string
+                serviceID      string
+                expectedStatus int
+        }{
+                {
+                        name:           "existing service",
+                        serviceID:      "service-1",
+                        expectedStatus: http.StatusOK,
+                },
+                {
+                        name:           "non-existing service",
+                        serviceID:      "non-existing",
+                        expectedStatus: http.StatusNotFound,
+                },
+        }
+
+        for _, tt := range tests </span><span class="cov0" title="0">{
+                t.Run(tt.name, func(t *testing.T) </span><span class="cov0" title="0">{
+                        req, _ := http.NewRequest("GET", "/api/v1/services/"+tt.serviceID, nil)
+                        w := httptest.NewRecorder()
+                        router.ServeHTTP(w, req)
+
+                        assert.Equal(t, tt.expectedStatus, w.Code)
+
+                        if tt.expectedStatus == http.StatusOK </span><span class="cov0" title="0">{
+                                var response Service
+                                err := json.Unmarshal(w.Body.Bytes(), &amp;response)
+                                require.NoError(t, err)
+                                assert.Equal(t, tt.serviceID, response.ID)
+                        }</span>
+                })
+        }
+}
+
+func TestGetVersionsIntegration(t *testing.T) <span class="cov0" title="0">{
+        router := setupTestRouter()
+
+        tests := []struct {
+                name           string
+                serviceID      string
+                queryParams    string
+                expectedStatus int
+                expectedCount  int
+        }{
+                {
+                        name:           "get versions for service-1",
+                        serviceID:      "service-1",
+                        queryParams:    "",
+                        expectedStatus: http.StatusOK,
+                        expectedCount:  2,
+                },
+                {
+                        name:           "get versions with pagination",
+                        serviceID:      "service-1",
+                        queryParams:    "?page=1&amp;page_size=1",
+                        expectedStatus: http.StatusOK,
+                        expectedCount:  1,
+                },
+                {
+                        name:           "get versions for service with no versions",
+                        serviceID:      "service-2",
+                        queryParams:    "",
+                        expectedStatus: http.StatusOK,
+                        expectedCount:  1, // service-2 has 1 version
+                },
+        }
+
+        for _, tt := range tests </span><span class="cov0" title="0">{
+                t.Run(tt.name, func(t *testing.T) </span><span class="cov0" title="0">{
+                        req, _ := http.NewRequest("GET", "/api/v1/services/"+tt.serviceID+"/versions"+tt.queryParams, nil)
+                        w := httptest.NewRecorder()
+                        router.ServeHTTP(w, req)
+
+                        assert.Equal(t, tt.expectedStatus, w.Code)
+
+                        if tt.expectedStatus == http.StatusOK </span><span class="cov0" title="0">{
+                                var response PaginatedResponse
+                                err := json.Unmarshal(w.Body.Bytes(), &amp;response)
+                                require.NoError(t, err)
+
+                                versions := response.Data.([]interface{})
+                                assert.Len(t, versions, tt.expectedCount)
+                                assert.NotNil(t, response.Pagination)
+                        }</span>
+                })
+        }
+}
+
+func TestCreateVersionIntegration(t *testing.T) <span class="cov0" title="0">{
+        router := setupTestRouter()
+
+        tests := []struct {
+                name           string
+                serviceID      string
+                versionData    Version
+                expectedStatus int
+        }{
+                {
+                        name:      "valid version",
+                        serviceID: "service-1",
+                        versionData: Version{
+                                Semver:    "1.2.0",
+                                Status:    "released",
+                                Changelog: "New feature release",
+                        },
+                        expectedStatus: http.StatusCreated,
+                },
+                {
+                        name:      "version for non-existing service",
+                        serviceID: "non-existing",
+                        versionData: Version{
+                                Semver:    "1.0.0",
+                                Status:    "released",
+                                Changelog: "Test version",
+                        },
+                        expectedStatus: http.StatusCreated, // Still creates, just with invalid service_id
+                },
+        }
+
+        for _, tt := range tests </span><span class="cov0" title="0">{
+                t.Run(tt.name, func(t *testing.T) </span><span class="cov0" title="0">{
+                        jsonData, _ := json.Marshal(tt.versionData)
+                        req, _ := http.NewRequest("POST", "/api/v1/services/"+tt.serviceID+"/versions", bytes.NewBuffer(jsonData))
+                        req.Header.Set("Content-Type", "application/json")
+
+                        w := httptest.NewRecorder()
+                        router.ServeHTTP(w, req)
+
+                        assert.Equal(t, tt.expectedStatus, w.Code)
+
+                        if tt.expectedStatus == http.StatusCreated </span><span class="cov0" title="0">{
+                                var response Version
+                                err := json.Unmarshal(w.Body.Bytes(), &amp;response)
+                                require.NoError(t, err)
+                                assert.NotEmpty(t, response.ID)
+                                assert.Equal(t, tt.serviceID, response.ServiceID)
+                                assert.Equal(t, tt.versionData.Semver, response.Semver)
+                                assert.Equal(t, tt.versionData.Status, response.Status)
+                                assert.Equal(t, tt.versionData.Changelog, response.Changelog)
+                        }</span>
+                })
+        }
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package main
+
+import (
+        "database/sql"
+        "log"
+        "net/http"
+        "os"
+        "strconv"
+
+        "github.com/gin-gonic/gin"
+        _ "github.com/go-sql-driver/mysql"
+        "github.com/google/uuid"
+        swaggerFiles "github.com/swaggo/files"
+        ginSwagger "github.com/swaggo/gin-swagger"
+        _ "github.com/yashjain/konnect/docs"
+)
+
+type Service struct {
+        ID            string `json:"id" db:"id"`
+        Name          string `json:"name" db:"name"`
+        Slug          string `json:"slug" db:"slug"`
+        Description   string `json:"description" db:"description"`
+        CreatedAt     string `json:"created_at" db:"created_at"`
+        UpdatedAt     string `json:"updated_at" db:"updated_at"`
+        VersionsCount int    `json:"versions_count" db:"versions_count"`
+}
+
+type Version struct {
+        ID        string `json:"id" db:"id"`
+        ServiceID string `json:"service_id" db:"service_id"`
+        Semver    string `json:"semver" db:"semver"`
+        Status    string `json:"status" db:"status"`
+        Changelog string `json:"changelog" db:"changelog"`
+        CreatedAt string `json:"created_at" db:"created_at"`
+}
+
+// Pagination structures
+type PaginationParams struct {
+        Page     int `form:"page" binding:"min=1"`
+        PageSize int `form:"page_size" binding:"min=1,max=100"`
+}
+
+// Search parameters
+type SearchParams struct {
+        Query    string `form:"q" binding:"required"`
+        Page     int    `form:"page" binding:"min=1"`
+        PageSize int    `form:"page_size" binding:"min=1,max=100"`
+}
+
+type PaginatedResponse struct {
+        Data       interface{} `json:"data"`
+        Pagination Pagination  `json:"pagination"`
+}
+
+type Pagination struct {
+        Page       int  `json:"page"`
+        PageSize   int  `json:"page_size"`
+        Total      int  `json:"total"`
+        TotalPages int  `json:"total_pages"`
+        HasNext    bool `json:"has_next"`
+        HasPrev    bool `json:"has_prev"`
+}
+
+var db *sql.DB
+
+// Helper function to get pagination parameters with defaults
+func getPaginationParams(c *gin.Context) PaginationParams <span class="cov8" title="4">{
+        params := PaginationParams{
+                Page:     1,
+                PageSize: 10,
+        }
+
+        // Parse page parameter
+        if pageStr := c.Query("page"); pageStr != "" </span><span class="cov4" title="2">{
+                if page, err := strconv.Atoi(pageStr); err == nil &amp;&amp; page &gt; 0 </span><span class="cov4" title="2">{
+                        params.Page = page
+                }</span>
+        }
+
+        // Parse page_size parameter
+        <span class="cov8" title="4">if pageSizeStr := c.Query("page_size"); pageSizeStr != "" </span><span class="cov4" title="2">{
+                if pageSize, err := strconv.Atoi(pageSizeStr); err == nil &amp;&amp; pageSize &gt; 0 </span><span class="cov4" title="2">{
+                        params.PageSize = pageSize
+                }</span>
+        }
+
+        <span class="cov8" title="4">return params</span>
+}
+
+// Helper function to get search parameters with defaults
+func getSearchParams(c *gin.Context) SearchParams <span class="cov7" title="3">{
+        params := SearchParams{
+                Query:    c.Query("q"),
+                Page:     1,
+                PageSize: 10,
+        }
+
+        // Parse page parameter
+        if pageStr := c.Query("page"); pageStr != "" </span><span class="cov1" title="1">{
+                if page, err := strconv.Atoi(pageStr); err == nil &amp;&amp; page &gt; 0 </span><span class="cov1" title="1">{
+                        params.Page = page
+                }</span>
+        }
+
+        // Parse page_size parameter
+        <span class="cov7" title="3">if pageSizeStr := c.Query("page_size"); pageSizeStr != "" </span><span class="cov1" title="1">{
+                if pageSize, err := strconv.Atoi(pageSizeStr); err == nil &amp;&amp; pageSize &gt; 0 </span><span class="cov1" title="1">{
+                        params.PageSize = pageSize
+                }</span>
+        }
+
+        <span class="cov7" title="3">return params</span>
+}
+
+// Helper function to calculate pagination metadata
+func calculatePagination(page, pageSize, total int) Pagination <span class="cov10" title="5">{
+        totalPages := (total + pageSize - 1) / pageSize // Ceiling division
+
+        return Pagination{
+                Page:       page,
+                PageSize:   pageSize,
+                Total:      total,
+                TotalPages: totalPages,
+                HasNext:    page &lt; totalPages,
+                HasPrev:    page &gt; 1,
+        }
+}</span>
+
+// @title Services API
+// @version 1.0
+// @description A REST API for managing services and their versions
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.url http://www.swagger.io/support
+// @contact.email support@swagger.io
+
+// @license.name MIT
+// @license.url https://opensource.org/licenses/MIT
+
+// @host localhost:8080
+// @BasePath /api/v1
+// @schemes http https
+
+func main() <span class="cov0" title="0">{
+        // Initialize database connection
+        dsn := os.Getenv("MYSQL_DSN")
+        if dsn == "" </span><span class="cov0" title="0">{
+                dsn = "app:app@tcp(127.0.0.1:3306)/servicesdb?parseTime=true&amp;charset=utf8mb4&amp;collation=utf8mb4_0900_ai_ci"
+        }</span>
+
+        <span class="cov0" title="0">var err error
+        db, err = sql.Open("mysql", dsn)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Fatal("Failed to connect to database:", err)
+        }</span>
+
+        <span class="cov0" title="0">if err = db.Ping(); err != nil </span><span class="cov0" title="0">{
+                if closeErr := db.Close(); closeErr != nil </span><span class="cov0" title="0">{
+                        log.Printf("Error closing database: %v", closeErr)
+                }</span>
+                <span class="cov0" title="0">log.Fatal("Failed to ping database:", err)</span>
+        }
+
+        // Set up Gin router
+        <span class="cov0" title="0">if os.Getenv("LOG_LEVEL") == "info" </span><span class="cov0" title="0">{
+                gin.SetMode(gin.ReleaseMode)
+        }</span>
+
+        <span class="cov0" title="0">r := gin.Default()
+
+        // Swagger endpoint
+        r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+        // Health check endpoint
+        r.GET("/health", healthCheck)
+
+        // API routes
+        api := r.Group("/api/v1")
+        </span><span class="cov0" title="0">{
+                api.GET("/services", getServices)
+                api.GET("/services/search", searchServices)
+                api.POST("/services", createService)
+                api.GET("/services/:id", getService)
+                api.PUT("/services/:id", updateService)
+                api.DELETE("/services/:id", deleteService)
+
+                api.GET("/services/:id/versions", getVersions)
+                api.POST("/services/:id/versions", createVersion)
+        }</span>
+
+        <span class="cov0" title="0">port := os.Getenv("PORT")
+        if port == "" </span><span class="cov0" title="0">{
+                port = "8080"
+        }</span>
+
+        // Set up database cleanup before starting server
+        <span class="cov0" title="0">defer func() </span><span class="cov0" title="0">{
+                if err := db.Close(); err != nil </span><span class="cov0" title="0">{
+                        log.Printf("Error closing database: %v", err)
+                }</span>
+        }()
+
+        <span class="cov0" title="0">log.Printf("Server starting on port %s", port)
+        if err := http.ListenAndServe(":"+port, r); err != nil </span><span class="cov0" title="0">{
+                log.Printf("Server failed to start: %v", err)
+        }</span>
+}
+
+// healthCheck godoc
+// @Summary Health check endpoint
+// @Description Check if the API is running
+// @Tags health
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /health [get]
+func healthCheck(c *gin.Context) <span class="cov1" title="1">{
+        c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}</span>
+
+// getServices godoc
+// @Summary Get all services
+// @Description Get a paginated list of all services
+// @Tags services
+// @Produce json
+// @Param page query int false "Page number (default: 1)" minimum(1)
+// @Param page_size query int false "Number of items per page (default: 10, max: 100)" minimum(1) maximum(100)
+// @Success 200 {object} PaginatedResponse{data=[]Service}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /services [get]
+func getServices(c *gin.Context) <span class="cov0" title="0">{
+        // Get pagination parameters
+        params := getPaginationParams(c)
+
+        // Validate pagination parameters
+        if params.Page &lt; 1 </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, gin.H{"error": "page must be greater than 0"})
+                return
+        }</span>
+        <span class="cov0" title="0">if params.PageSize &lt; 1 || params.PageSize &gt; 100 </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, gin.H{"error": "page_size must be between 1 and 100"})
+                return
+        }</span>
+
+        // Calculate offset
+        <span class="cov0" title="0">offset := (params.Page - 1) * params.PageSize
+
+        // Get total count
+        var total int
+        err := db.QueryRow("SELECT COUNT(*) FROM services").Scan(&amp;total)
+        if err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                return
+        }</span>
+
+        // Get paginated services
+        <span class="cov0" title="0">query := "SELECT id, name, slug, description, created_at, updated_at, versions_count FROM services ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        rows, err := db.Query(query, params.PageSize, offset)
+        if err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                return
+        }</span>
+        <span class="cov0" title="0">defer func() </span><span class="cov0" title="0">{
+                if err := rows.Close(); err != nil </span><span class="cov0" title="0">{
+                        log.Printf("Error closing rows: %v", err)
+                }</span>
+        }()
+
+        <span class="cov0" title="0">var services []Service
+        for rows.Next() </span><span class="cov0" title="0">{
+                var s Service
+                err := rows.Scan(&amp;s.ID, &amp;s.Name, &amp;s.Slug, &amp;s.Description, &amp;s.CreatedAt, &amp;s.UpdatedAt, &amp;s.VersionsCount)
+                if err != nil </span><span class="cov0" title="0">{
+                        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                        return
+                }</span>
+                <span class="cov0" title="0">services = append(services, s)</span>
+        }
+
+        // Create paginated response
+        <span class="cov0" title="0">pagination := calculatePagination(params.Page, params.PageSize, total)
+        response := PaginatedResponse{
+                Data:       services,
+                Pagination: pagination,
+        }
+
+        c.JSON(http.StatusOK, response)</span>
+}
+
+// searchServices godoc
+// @Summary Search services
+// @Description Search services by name, slug, or description using full-text search
+// @Tags services
+// @Produce json
+// @Param q query string true "Search query"
+// @Param page query int false "Page number (default: 1)" minimum(1)
+// @Param page_size query int false "Number of items per page (default: 10, max: 100)" minimum(1) maximum(100)
+// @Success 200 {object} PaginatedResponse{data=[]Service}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /services/search [get]
+func searchServices(c *gin.Context) <span class="cov0" title="0">{
+        // Get search parameters
+        params := getSearchParams(c)
+
+        // Validate search query
+        if params.Query == "" </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, gin.H{"error": "search query 'q' is required"})
+                return
+        }</span>
+
+        // Validate pagination parameters
+        <span class="cov0" title="0">if params.Page &lt; 1 </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, gin.H{"error": "page must be greater than 0"})
+                return
+        }</span>
+        <span class="cov0" title="0">if params.PageSize &lt; 1 || params.PageSize &gt; 100 </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, gin.H{"error": "page_size must be between 1 and 100"})
+                return
+        }</span>
+
+        // Calculate offset
+        <span class="cov0" title="0">offset := (params.Page - 1) * params.PageSize
+
+        // Get total count for search results
+        countQuery := "SELECT COUNT(*) FROM services WHERE MATCH(name, description) AGAINST(? IN NATURAL LANGUAGE MODE)"
+        var total int
+        err := db.QueryRow(countQuery, params.Query).Scan(&amp;total)
+        if err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                return
+        }</span>
+
+        // Get paginated search results
+        <span class="cov0" title="0">searchQuery := `
+                SELECT id, name, slug, description, created_at, updated_at, versions_count 
+                FROM services 
+                WHERE MATCH(name, description) AGAINST(? IN NATURAL LANGUAGE MODE)
+                ORDER BY MATCH(name, description) AGAINST(? IN NATURAL LANGUAGE MODE) DESC, created_at DESC
+                LIMIT ? OFFSET ?`
+
+        rows, err := db.Query(searchQuery, params.Query, params.Query, params.PageSize, offset)
+        if err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                return
+        }</span>
+        <span class="cov0" title="0">defer func() </span><span class="cov0" title="0">{
+                if err := rows.Close(); err != nil </span><span class="cov0" title="0">{
+                        log.Printf("Error closing rows: %v", err)
+                }</span>
+        }()
+
+        <span class="cov0" title="0">var services []Service
+        for rows.Next() </span><span class="cov0" title="0">{
+                var s Service
+                err := rows.Scan(&amp;s.ID, &amp;s.Name, &amp;s.Slug, &amp;s.Description, &amp;s.CreatedAt, &amp;s.UpdatedAt, &amp;s.VersionsCount)
+                if err != nil </span><span class="cov0" title="0">{
+                        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                        return
+                }</span>
+                <span class="cov0" title="0">services = append(services, s)</span>
+        }
+
+        // Create paginated response
+        <span class="cov0" title="0">pagination := calculatePagination(params.Page, params.PageSize, total)
+        response := PaginatedResponse{
+                Data:       services,
+                Pagination: pagination,
+        }
+
+        c.JSON(http.StatusOK, response)</span>
+}
+
+// createService godoc
+// @Summary Create a new service
+// @Description Create a new service with the provided information
+// @Tags services
+// @Accept json
+// @Produce json
+// @Param service body Service true "Service object"
+// @Success 201 {object} Service
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /services [post]
+func createService(c *gin.Context) <span class="cov0" title="0">{
+        var service Service
+        if err := c.ShouldBindJSON(&amp;service); err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+                return
+        }</span>
+
+        <span class="cov0" title="0">service.ID = uuid.New().String()
+
+        _, err := db.Exec("INSERT INTO services (id, name, slug, description) VALUES (?, ?, ?, ?)",
+                service.ID, service.Name, service.Slug, service.Description)
+        if err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                return
+        }</span>
+
+        <span class="cov0" title="0">c.JSON(http.StatusCreated, service)</span>
+}
+
+// getService godoc
+// @Summary Get a service by ID
+// @Description Get a specific service by its ID
+// @Tags services
+// @Produce json
+// @Param id path string true "Service ID"
+// @Success 200 {object} Service
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /services/{id} [get]
+func getService(c *gin.Context) <span class="cov0" title="0">{
+        id := c.Param("id")
+
+        var service Service
+        err := db.QueryRow("SELECT id, name, slug, description, created_at, updated_at, versions_count FROM services WHERE id = ?", id).
+                Scan(&amp;service.ID, &amp;service.Name, &amp;service.Slug, &amp;service.Description, &amp;service.CreatedAt, &amp;service.UpdatedAt, &amp;service.VersionsCount)
+
+        if err == sql.ErrNoRows </span><span class="cov0" title="0">{
+                c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
+                return
+        }</span>
+        <span class="cov0" title="0">if err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                return
+        }</span>
+
+        <span class="cov0" title="0">c.JSON(http.StatusOK, service)</span>
+}
+
+// updateService godoc
+// @Summary Update a service
+// @Description Update a service with the provided information
+// @Tags services
+// @Accept json
+// @Produce json
+// @Param id path string true "Service ID"
+// @Param service body Service true "Service object"
+// @Success 200 {object} Service
+// @Failure 400 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /services/{id} [put]
+func updateService(c *gin.Context) <span class="cov0" title="0">{
+        id := c.Param("id")
+
+        var service Service
+        if err := c.ShouldBindJSON(&amp;service); err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+                return
+        }</span>
+
+        <span class="cov0" title="0">result, err := db.Exec("UPDATE services SET name = ?, slug = ?, description = ? WHERE id = ?",
+                service.Name, service.Slug, service.Description, id)
+        if err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                return
+        }</span>
+
+        <span class="cov0" title="0">rowsAffected, _ := result.RowsAffected()
+        if rowsAffected == 0 </span><span class="cov0" title="0">{
+                c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
+                return
+        }</span>
+
+        <span class="cov0" title="0">service.ID = id
+        c.JSON(http.StatusOK, service)</span>
+}
+
+// deleteService godoc
+// @Summary Delete a service
+// @Description Delete a service by its ID
+// @Tags services
+// @Produce json
+// @Param id path string true "Service ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /services/{id} [delete]
+func deleteService(c *gin.Context) <span class="cov0" title="0">{
+        id := c.Param("id")
+
+        result, err := db.Exec("DELETE FROM services WHERE id = ?", id)
+        if err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                return
+        }</span>
+
+        <span class="cov0" title="0">rowsAffected, _ := result.RowsAffected()
+        if rowsAffected == 0 </span><span class="cov0" title="0">{
+                c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
+                return
+        }</span>
+
+        <span class="cov0" title="0">c.JSON(http.StatusOK, gin.H{"message": "Service deleted"})</span>
+}
+
+// getVersions godoc
+// @Summary Get versions for a service
+// @Description Get a paginated list of versions for a specific service
+// @Tags versions
+// @Produce json
+// @Param id path string true "Service ID"
+// @Param page query int false "Page number (default: 1)" minimum(1)
+// @Param page_size query int false "Number of items per page (default: 10, max: 100)" minimum(1) maximum(100)
+// @Success 200 {object} PaginatedResponse{data=[]Version}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /services/{id}/versions [get]
+func getVersions(c *gin.Context) <span class="cov0" title="0">{
+        serviceID := c.Param("id")
+
+        // Get pagination parameters
+        params := getPaginationParams(c)
+
+        // Validate pagination parameters
+        if params.Page &lt; 1 </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, gin.H{"error": "page must be greater than 0"})
+                return
+        }</span>
+        <span class="cov0" title="0">if params.PageSize &lt; 1 || params.PageSize &gt; 100 </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, gin.H{"error": "page_size must be between 1 and 100"})
+                return
+        }</span>
+
+        // Calculate offset
+        <span class="cov0" title="0">offset := (params.Page - 1) * params.PageSize
+
+        // Get total count for this service
+        var total int
+        err := db.QueryRow("SELECT COUNT(*) FROM versions WHERE service_id = ?", serviceID).Scan(&amp;total)
+        if err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                return
+        }</span>
+
+        // Get paginated versions
+        <span class="cov0" title="0">query := "SELECT id, service_id, semver, status, changelog, created_at FROM versions WHERE service_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        rows, err := db.Query(query, serviceID, params.PageSize, offset)
+        if err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                return
+        }</span>
+        <span class="cov0" title="0">defer func() </span><span class="cov0" title="0">{
+                if err := rows.Close(); err != nil </span><span class="cov0" title="0">{
+                        log.Printf("Error closing rows: %v", err)
+                }</span>
+        }()
+
+        <span class="cov0" title="0">var versions []Version
+        for rows.Next() </span><span class="cov0" title="0">{
+                var v Version
+                err := rows.Scan(&amp;v.ID, &amp;v.ServiceID, &amp;v.Semver, &amp;v.Status, &amp;v.Changelog, &amp;v.CreatedAt)
+                if err != nil </span><span class="cov0" title="0">{
+                        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                        return
+                }</span>
+                <span class="cov0" title="0">versions = append(versions, v)</span>
+        }
+
+        // Create paginated response
+        <span class="cov0" title="0">pagination := calculatePagination(params.Page, params.PageSize, total)
+        response := PaginatedResponse{
+                Data:       versions,
+                Pagination: pagination,
+        }
+
+        c.JSON(http.StatusOK, response)</span>
+}
+
+// createVersion godoc
+// @Summary Create a new version
+// @Description Create a new version for a specific service
+// @Tags versions
+// @Accept json
+// @Produce json
+// @Param id path string true "Service ID"
+// @Param version body Version true "Version object"
+// @Success 201 {object} Version
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /services/{id}/versions [post]
+func createVersion(c *gin.Context) <span class="cov0" title="0">{
+        serviceID := c.Param("id")
+
+        var version Version
+        if err := c.ShouldBindJSON(&amp;version); err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+                return
+        }</span>
+
+        <span class="cov0" title="0">version.ID = uuid.New().String()
+        version.ServiceID = serviceID
+
+        // Start a transaction to ensure atomicity
+        tx, err := db.Begin()
+        if err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                return
+        }</span>
+        <span class="cov0" title="0">defer func() </span><span class="cov0" title="0">{
+                if err := tx.Rollback(); err != nil </span><span class="cov0" title="0">{
+                        log.Printf("Error rolling back transaction: %v", err)
+                }</span>
+        }()
+
+        // Insert the version
+        <span class="cov0" title="0">_, err = tx.Exec("INSERT INTO versions (id, service_id, semver, status, changelog) VALUES (?, ?, ?, ?, ?)",
+                version.ID, version.ServiceID, version.Semver, version.Status, version.Changelog)
+        if err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                return
+        }</span>
+
+        // Update the versions_count in the services table
+        <span class="cov0" title="0">_, err = tx.Exec("UPDATE services SET versions_count = versions_count + 1 WHERE id = ?", serviceID)
+        if err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                return
+        }</span>
+
+        // Commit the transaction
+        <span class="cov0" title="0">if err = tx.Commit(); err != nil </span><span class="cov0" title="0">{
+                c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+                return
+        }</span>
+
+        <span class="cov0" title="0">c.JSON(http.StatusCreated, version)</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">// Package docs Code generated by swaggo/swag. DO NOT EDIT
+package docs
+
+import "github.com/swaggo/swag"
+
+const docTemplate = `{
+    "schemes": {{ marshal .Schemes }},
+    "swagger": "2.0",
+    "info": {
+        "description": "{{escape .Description}}",
+        "title": "{{.Title}}",
+        "termsOfService": "http://swagger.io/terms/",
+        "contact": {
+            "name": "API Support",
+            "url": "http://www.swagger.io/support",
+            "email": "support@swagger.io"
+        },
+        "license": {
+            "name": "MIT",
+            "url": "https://opensource.org/licenses/MIT"
+        },
+        "version": "{{.Version}}"
+    },
+    "host": "{{.Host}}",
+    "basePath": "{{.BasePath}}",
+    "paths": {
+        "/health": {
+            "get": {
+                "description": "Check if the API is running",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "Health check endpoint",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/services": {
+            "get": {
+                "description": "Get a paginated list of all services",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "services"
+                ],
+                "summary": "Get all services",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page number (default: 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Number of items per page (default: 10, max: 100)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/main.PaginatedResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/main.Service"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new service with the provided information",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "services"
+                ],
+                "summary": "Create a new service",
+                "parameters": [
+                    {
+                        "description": "Service object",
+                        "name": "service",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.Service"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/main.Service"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/services/search": {
+            "get": {
+                "description": "Search services by name, slug, or description using full-text search",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "services"
+                ],
+                "summary": "Search services",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search query",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page number (default: 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Number of items per page (default: 10, max: 100)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/main.PaginatedResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/main.Service"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/services/{id}": {
+            "get": {
+                "description": "Get a specific service by its ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "services"
+                ],
+                "summary": "Get a service by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.Service"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update a service with the provided information",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "services"
+                ],
+                "summary": "Update a service",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Service object",
+                        "name": "service",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.Service"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.Service"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a service by its ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "services"
+                ],
+                "summary": "Delete a service",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/services/{id}/versions": {
+            "get": {
+                "description": "Get a paginated list of versions for a specific service",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "versions"
+                ],
+                "summary": "Get versions for a service",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Page number (default: 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Number of items per page (default: 10, max: 100)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/main.PaginatedResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/main.Version"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new version for a specific service",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "versions"
+                ],
+                "summary": "Create a new version",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Version object",
+                        "name": "version",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.Version"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/main.Version"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "main.PaginatedResponse": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "pagination": {
+                    "$ref": "#/definitions/main.Pagination"
+                }
+            }
+        },
+        "main.Pagination": {
+            "type": "object",
+            "properties": {
+                "has_next": {
+                    "type": "boolean"
+                },
+                "has_prev": {
+                    "type": "boolean"
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "main.Service": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "slug": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "versions_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "main.Version": {
+            "type": "object",
+            "properties": {
+                "changelog": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "semver": {
+                    "type": "string"
+                },
+                "service_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        }
+    }
+}`
+
+// SwaggerInfo holds exported Swagger Info so clients can modify it
+var SwaggerInfo = &amp;swag.Spec{
+        Version:          "1.0",
+        Host:             "localhost:8080",
+        BasePath:         "/api/v1",
+        Schemes:          []string{"http", "https"},
+        Title:            "Services API",
+        Description:      "A REST API for managing services and their versions",
+        InfoInstanceName: "swagger",
+        SwaggerTemplate:  docTemplate,
+        LeftDelim:        "{{",
+        RightDelim:       "}}",
+}
+
+func init() <span class="cov8" title="1">{
+        swag.Register(SwaggerInfo.InstanceName(), SwaggerInfo)
+}</span>
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>

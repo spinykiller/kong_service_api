@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
@@ -33,7 +34,97 @@ type Version struct {
 	CreatedAt string `json:"created_at" db:"created_at"`
 }
 
+// Pagination structures
+type PaginationParams struct {
+	Page     int `form:"page" binding:"min=1"`
+	PageSize int `form:"page_size" binding:"min=1,max=100"`
+}
+
+// Search parameters
+type SearchParams struct {
+	Query    string `form:"q" binding:"required"`
+	Page     int    `form:"page" binding:"min=1"`
+	PageSize int    `form:"page_size" binding:"min=1,max=100"`
+}
+
+type PaginatedResponse struct {
+	Data       interface{} `json:"data"`
+	Pagination Pagination  `json:"pagination"`
+}
+
+type Pagination struct {
+	Page       int  `json:"page"`
+	PageSize   int  `json:"page_size"`
+	Total      int  `json:"total"`
+	TotalPages int  `json:"total_pages"`
+	HasNext    bool `json:"has_next"`
+	HasPrev    bool `json:"has_prev"`
+}
+
 var db *sql.DB
+
+// Helper function to get pagination parameters with defaults
+func getPaginationParams(c *gin.Context) PaginationParams {
+	params := PaginationParams{
+		Page:     1,
+		PageSize: 10,
+	}
+
+	// Parse page parameter
+	if pageStr := c.Query("page"); pageStr != "" {
+		if page, err := strconv.Atoi(pageStr); err == nil && page > 0 {
+			params.Page = page
+		}
+	}
+
+	// Parse page_size parameter
+	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
+		if pageSize, err := strconv.Atoi(pageSizeStr); err == nil && pageSize > 0 {
+			params.PageSize = pageSize
+		}
+	}
+
+	return params
+}
+
+// Helper function to get search parameters with defaults
+func getSearchParams(c *gin.Context) SearchParams {
+	params := SearchParams{
+		Query:    c.Query("q"),
+		Page:     1,
+		PageSize: 10,
+	}
+
+	// Parse page parameter
+	if pageStr := c.Query("page"); pageStr != "" {
+		if page, err := strconv.Atoi(pageStr); err == nil && page > 0 {
+			params.Page = page
+		}
+	}
+
+	// Parse page_size parameter
+	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
+		if pageSize, err := strconv.Atoi(pageSizeStr); err == nil && pageSize > 0 {
+			params.PageSize = pageSize
+		}
+	}
+
+	return params
+}
+
+// Helper function to calculate pagination metadata
+func calculatePagination(page, pageSize, total int) Pagination {
+	totalPages := (total + pageSize - 1) / pageSize // Ceiling division
+
+	return Pagination{
+		Page:       page,
+		PageSize:   pageSize,
+		Total:      total,
+		TotalPages: totalPages,
+		HasNext:    page < totalPages,
+		HasPrev:    page > 1,
+	}
+}
 
 // @title Services API
 // @version 1.0
@@ -88,6 +179,7 @@ func main() {
 	api := r.Group("/api/v1")
 	{
 		api.GET("/services", getServices)
+		api.GET("/services/search", searchServices)
 		api.POST("/services", createService)
 		api.GET("/services/:id", getService)
 		api.PUT("/services/:id", updateService)
@@ -128,14 +220,43 @@ func healthCheck(c *gin.Context) {
 
 // getServices godoc
 // @Summary Get all services
-// @Description Get a list of all services
+// @Description Get a paginated list of all services
 // @Tags services
 // @Produce json
-// @Success 200 {array} Service
+// @Param page query int false "Page number (default: 1)" minimum(1)
+// @Param page_size query int false "Number of items per page (default: 10, max: 100)" minimum(1) maximum(100)
+// @Success 200 {object} PaginatedResponse{data=[]Service}
+// @Failure 400 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Router /services [get]
 func getServices(c *gin.Context) {
-	rows, err := db.Query("SELECT id, name, slug, description, created_at, updated_at, versions_count FROM services ORDER BY created_at DESC")
+	// Get pagination parameters
+	params := getPaginationParams(c)
+
+	// Validate pagination parameters
+	if params.Page < 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "page must be greater than 0"})
+		return
+	}
+	if params.PageSize < 1 || params.PageSize > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "page_size must be between 1 and 100"})
+		return
+	}
+
+	// Calculate offset
+	offset := (params.Page - 1) * params.PageSize
+
+	// Get total count
+	var total int
+	err := db.QueryRow("SELECT COUNT(*) FROM services").Scan(&total)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get paginated services
+	query := "SELECT id, name, slug, description, created_at, updated_at, versions_count FROM services ORDER BY created_at DESC LIMIT ? OFFSET ?"
+	rows, err := db.Query(query, params.PageSize, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -157,7 +278,98 @@ func getServices(c *gin.Context) {
 		services = append(services, s)
 	}
 
-	c.JSON(http.StatusOK, services)
+	// Create paginated response
+	pagination := calculatePagination(params.Page, params.PageSize, total)
+	response := PaginatedResponse{
+		Data:       services,
+		Pagination: pagination,
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// searchServices godoc
+// @Summary Search services
+// @Description Search services by name, slug, or description using full-text search
+// @Tags services
+// @Produce json
+// @Param q query string true "Search query"
+// @Param page query int false "Page number (default: 1)" minimum(1)
+// @Param page_size query int false "Number of items per page (default: 10, max: 100)" minimum(1) maximum(100)
+// @Success 200 {object} PaginatedResponse{data=[]Service}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /services/search [get]
+func searchServices(c *gin.Context) {
+	// Get search parameters
+	params := getSearchParams(c)
+
+	// Validate search query
+	if params.Query == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "search query 'q' is required"})
+		return
+	}
+
+	// Validate pagination parameters
+	if params.Page < 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "page must be greater than 0"})
+		return
+	}
+	if params.PageSize < 1 || params.PageSize > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "page_size must be between 1 and 100"})
+		return
+	}
+
+	// Calculate offset
+	offset := (params.Page - 1) * params.PageSize
+
+	// Get total count for search results
+	countQuery := "SELECT COUNT(*) FROM services WHERE MATCH(name, description) AGAINST(? IN NATURAL LANGUAGE MODE)"
+	var total int
+	err := db.QueryRow(countQuery, params.Query).Scan(&total)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get paginated search results
+	searchQuery := `
+		SELECT id, name, slug, description, created_at, updated_at, versions_count 
+		FROM services 
+		WHERE MATCH(name, description) AGAINST(? IN NATURAL LANGUAGE MODE)
+		ORDER BY MATCH(name, description) AGAINST(? IN NATURAL LANGUAGE MODE) DESC, created_at DESC
+		LIMIT ? OFFSET ?`
+
+	rows, err := db.Query(searchQuery, params.Query, params.Query, params.PageSize, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("Error closing rows: %v", err)
+		}
+	}()
+
+	var services []Service
+	for rows.Next() {
+		var s Service
+		err := rows.Scan(&s.ID, &s.Name, &s.Slug, &s.Description, &s.CreatedAt, &s.UpdatedAt, &s.VersionsCount)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		services = append(services, s)
+	}
+
+	// Create paginated response
+	pagination := calculatePagination(params.Page, params.PageSize, total)
+	response := PaginatedResponse{
+		Data:       services,
+		Pagination: pagination,
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // createService godoc
@@ -288,17 +500,46 @@ func deleteService(c *gin.Context) {
 
 // getVersions godoc
 // @Summary Get versions for a service
-// @Description Get all versions for a specific service
+// @Description Get a paginated list of versions for a specific service
 // @Tags versions
 // @Produce json
 // @Param id path string true "Service ID"
-// @Success 200 {array} Version
+// @Param page query int false "Page number (default: 1)" minimum(1)
+// @Param page_size query int false "Number of items per page (default: 10, max: 100)" minimum(1) maximum(100)
+// @Success 200 {object} PaginatedResponse{data=[]Version}
+// @Failure 400 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Router /services/{id}/versions [get]
 func getVersions(c *gin.Context) {
 	serviceID := c.Param("id")
 
-	rows, err := db.Query("SELECT id, service_id, semver, status, changelog, created_at FROM versions WHERE service_id = ? ORDER BY created_at DESC", serviceID)
+	// Get pagination parameters
+	params := getPaginationParams(c)
+
+	// Validate pagination parameters
+	if params.Page < 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "page must be greater than 0"})
+		return
+	}
+	if params.PageSize < 1 || params.PageSize > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "page_size must be between 1 and 100"})
+		return
+	}
+
+	// Calculate offset
+	offset := (params.Page - 1) * params.PageSize
+
+	// Get total count for this service
+	var total int
+	err := db.QueryRow("SELECT COUNT(*) FROM versions WHERE service_id = ?", serviceID).Scan(&total)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get paginated versions
+	query := "SELECT id, service_id, semver, status, changelog, created_at FROM versions WHERE service_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?"
+	rows, err := db.Query(query, serviceID, params.PageSize, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -320,7 +561,14 @@ func getVersions(c *gin.Context) {
 		versions = append(versions, v)
 	}
 
-	c.JSON(http.StatusOK, versions)
+	// Create paginated response
+	pagination := calculatePagination(params.Page, params.PageSize, total)
+	response := PaginatedResponse{
+		Data:       versions,
+		Pagination: pagination,
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // createVersion godoc

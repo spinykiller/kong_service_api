@@ -2,7 +2,7 @@
 APP_NAME := services-api
 PKG := ./...
 BIN := bin/api
-IMAGE := ghcr.io/<your-org>/services-api:$(shell git rev-parse --short HEAD)
+IMAGE := ghcr.io/yashjain/services-api:$(shell git rev-parse --short HEAD)
 PORT ?= 8080
 
 # Tools
@@ -11,7 +11,10 @@ LINT := golangci-lint
 GOOSE := goose
 SWAG := swag
 
-.PHONY: all build run dev test lint fmt tidy clean docker docker-run docker-push migrate-up migrate-down seed coverage ci docs
+# Test variables
+TEST_DB_DSN ?= app:app@tcp(localhost:3306)/servicesdb_test?parseTime=true&multiStatements=true
+
+.PHONY: all build run dev test test-unit test-integration test-integration-docker test-coverage lint fmt tidy clean docker docker-run docker-push migrate-up migrate-down seed coverage ci docs test-setup test-clean
 
 all: build
 
@@ -28,8 +31,36 @@ dev:
 	docker compose up --build
 
 ## Tests
-test:
-	$(GOCMD) test -race -count=1 $(PKG)
+test: test-unit test-integration
+
+test-unit:
+	$(GOCMD) test -race -count=1 -run "TestHealthCheck|TestGetPaginationParams|TestGetSearchParams|TestCalculatePagination|TestServiceStruct|TestVersionStruct|TestPaginatedResponseStruct" ./cmd/api
+
+test-integration: test-setup
+	TEST_MYSQL_DSN="$(TEST_DB_DSN)" $(GOCMD) test -race -count=1 -run "TestMainIntegration|TestHealthCheckIntegration|TestGetServicesIntegration|TestSearchServicesIntegration|TestCreateServiceIntegration|TestGetServiceIntegration|TestGetVersionsIntegration|TestCreateVersionIntegration" ./cmd/api
+	$(MAKE) test-clean
+
+test-integration-docker:
+	@echo "Starting test database..."
+	docker compose -f docker-compose.test.yml up -d mysql-test
+	@echo "Waiting for database to be ready..."
+	@sleep 10
+	TEST_MYSQL_DSN="app:app@tcp(127.0.0.1:3307)/servicesdb_test?parseTime=true&charset=utf8mb4&collation=utf8mb4_0900_ai_ci" $(GOCMD) test -race -count=1 -run "TestMainIntegration|TestHealthCheckIntegration|TestGetServicesIntegration|TestSearchServicesIntegration|TestCreateServiceIntegration|TestGetServiceIntegration|TestGetVersionsIntegration|TestCreateVersionIntegration" ./cmd/api
+	@echo "Stopping test database..."
+	docker compose -f docker-compose.test.yml down
+
+test-coverage:
+	$(GOCMD) test -race -coverprofile=coverage.out -covermode=atomic $(PKG)
+	$(GOCMD) tool cover -func=coverage.out | tail -n 1
+	$(GOCMD) tool cover -html=coverage.out -o coverage.html
+
+test-setup:
+	@echo "Setting up test database..."
+	@mysql --protocol tcp -u app -papp -h 127.0.0.1 -P 3306 -e "CREATE DATABASE IF NOT EXISTS servicesdb_test;" || true
+
+test-clean:
+	@echo "Cleaning up test database..."
+	@mysql --protocol tcp -u app -papp -h 127.0.0.1 -P 3306 -e "DROP DATABASE IF EXISTS servicesdb_test;" || true
 
 coverage:
 	$(GOCMD) test -race -coverprofile=coverage.out -covermode=atomic $(PKG)
@@ -50,7 +81,7 @@ tidy:
 
 ## Clean
 clean:
-	rm -rf bin coverage.out
+	rm -rf bin coverage.out coverage.html
 
 ## Docker build & run
 docker:
