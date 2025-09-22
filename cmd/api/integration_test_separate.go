@@ -61,9 +61,9 @@ func setupTestDB() {
 func cleanupTestDB() {
 	if testDB != nil {
 		// Clean up test data
-		testDB.Exec("DELETE FROM versions")
-		testDB.Exec("DELETE FROM services")
-		testDB.Close()
+		_, _ = testDB.Exec("DELETE FROM versions")
+		_, _ = testDB.Exec("DELETE FROM services")
+		_ = testDB.Close()
 	}
 }
 
@@ -101,8 +101,8 @@ func createTestTables() {
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 	`
 
-	testDB.Exec(servicesSQL)
-	testDB.Exec(versionsSQL)
+	_, _ = testDB.Exec(servicesSQL)
+	_, _ = testDB.Exec(versionsSQL)
 }
 
 func seedTestData() {
@@ -114,7 +114,7 @@ func seedTestData() {
 	}
 
 	for _, service := range services {
-		testDB.Exec("INSERT INTO services (id, name, slug, description) VALUES (?, ?, ?, ?)",
+		_, _ = testDB.Exec("INSERT INTO services (id, name, slug, description) VALUES (?, ?, ?, ?)",
 			service.ID, service.Name, service.Slug, service.Description)
 	}
 
@@ -127,12 +127,12 @@ func seedTestData() {
 	}
 
 	for _, version := range versions {
-		testDB.Exec("INSERT INTO versions (id, service_id, semver, status, changelog) VALUES (?, ?, ?, ?, ?)",
+		_, _ = testDB.Exec("INSERT INTO versions (id, service_id, semver, status, changelog) VALUES (?, ?, ?, ?, ?)",
 			version.ID, version.ServiceID, version.Semver, version.Status, version.Changelog)
 	}
 
 	// Update versions_count
-	testDB.Exec("UPDATE services SET versions_count = (SELECT COUNT(*) FROM versions WHERE service_id = services.id)")
+	_, _ = testDB.Exec("UPDATE services SET versions_count = (SELECT COUNT(*) FROM versions WHERE service_id = services.id)")
 }
 
 func setupTestRouter() *gin.Engine {

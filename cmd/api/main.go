@@ -15,6 +15,11 @@ import (
 	_ "github.com/yashjain/konnect/docs"
 )
 
+// ============================================================================
+// DATA MODELS
+// ============================================================================
+
+// Service represents a service entity in the system
 type Service struct {
 	ID            string `json:"id" db:"id"`
 	Name          string `json:"name" db:"name"`
@@ -25,6 +30,7 @@ type Service struct {
 	VersionsCount int    `json:"versions_count" db:"versions_count"`
 }
 
+// Version represents a version of a service
 type Version struct {
 	ID        string `json:"id" db:"id"`
 	ServiceID string `json:"service_id" db:"service_id"`
@@ -34,24 +40,30 @@ type Version struct {
 	CreatedAt string `json:"created_at" db:"created_at"`
 }
 
-// Pagination structures
+// ============================================================================
+// REQUEST/RESPONSE MODELS
+// ============================================================================
+
+// PaginationParams represents pagination parameters for API requests
 type PaginationParams struct {
 	Page     int `form:"page" binding:"min=1"`
 	PageSize int `form:"page_size" binding:"min=1,max=100"`
 }
 
-// Search parameters
+// SearchParams represents search parameters for API requests
 type SearchParams struct {
 	Query    string `form:"q" binding:"required"`
 	Page     int    `form:"page" binding:"min=1"`
 	PageSize int    `form:"page_size" binding:"min=1,max=100"`
 }
 
+// PaginatedResponse represents a paginated API response
 type PaginatedResponse struct {
 	Data       interface{} `json:"data"`
 	Pagination Pagination  `json:"pagination"`
 }
 
+// Pagination represents pagination metadata
 type Pagination struct {
 	Page       int  `json:"page"`
 	PageSize   int  `json:"page_size"`
@@ -61,70 +73,15 @@ type Pagination struct {
 	HasPrev    bool `json:"has_prev"`
 }
 
+// ============================================================================
+// GLOBAL VARIABLES
+// ============================================================================
+
 var db *sql.DB
 
-// Helper function to get pagination parameters with defaults
-func getPaginationParams(c *gin.Context) PaginationParams {
-	params := PaginationParams{
-		Page:     1,
-		PageSize: 10,
-	}
-
-	// Parse page parameter
-	if pageStr := c.Query("page"); pageStr != "" {
-		if page, err := strconv.Atoi(pageStr); err == nil && page > 0 {
-			params.Page = page
-		}
-	}
-
-	// Parse page_size parameter
-	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		if pageSize, err := strconv.Atoi(pageSizeStr); err == nil && pageSize > 0 {
-			params.PageSize = pageSize
-		}
-	}
-
-	return params
-}
-
-// Helper function to get search parameters with defaults
-func getSearchParams(c *gin.Context) SearchParams {
-	params := SearchParams{
-		Query:    c.Query("q"),
-		Page:     1,
-		PageSize: 10,
-	}
-
-	// Parse page parameter
-	if pageStr := c.Query("page"); pageStr != "" {
-		if page, err := strconv.Atoi(pageStr); err == nil && page > 0 {
-			params.Page = page
-		}
-	}
-
-	// Parse page_size parameter
-	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		if pageSize, err := strconv.Atoi(pageSizeStr); err == nil && pageSize > 0 {
-			params.PageSize = pageSize
-		}
-	}
-
-	return params
-}
-
-// Helper function to calculate pagination metadata
-func calculatePagination(page, pageSize, total int) Pagination {
-	totalPages := (total + pageSize - 1) / pageSize // Ceiling division
-
-	return Pagination{
-		Page:       page,
-		PageSize:   pageSize,
-		Total:      total,
-		TotalPages: totalPages,
-		HasNext:    page < totalPages,
-		HasPrev:    page > 1,
-	}
-}
+// ============================================================================
+// SWAGGER DOCUMENTATION
+// ============================================================================
 
 // @title Services API
 // @version 1.0
@@ -142,13 +99,26 @@ func calculatePagination(page, pageSize, total int) Pagination {
 // @BasePath /api/v1
 // @schemes http https
 
+// ============================================================================
+// MAIN APPLICATION
+// ============================================================================
+
 func main() {
 	// Initialize database connection
-	dsn := os.Getenv("MYSQL_DSN")
-	if dsn == "" {
-		dsn = "app:app@tcp(127.0.0.1:3306)/servicesdb?parseTime=true&charset=utf8mb4&collation=utf8mb4_0900_ai_ci"
-	}
+	initDatabase()
 
+	// Set up Gin router
+	setupRouter()
+}
+
+// ============================================================================
+// DATABASE INITIALIZATION
+// ============================================================================
+
+// initDatabase initializes the database connection
+func initDatabase() {
+	dsn := getDatabaseDSN()
+	
 	var err error
 	db, err = sql.Open("mysql", dsn)
 	if err != nil {
@@ -161,8 +131,24 @@ func main() {
 		}
 		log.Fatal("Failed to ping database:", err)
 	}
+}
 
-	// Set up Gin router
+// getDatabaseDSN returns the database connection string
+func getDatabaseDSN() string {
+	dsn := os.Getenv("MYSQL_DSN")
+	if dsn == "" {
+		dsn = "app:app@tcp(127.0.0.1:3306)/servicesdb?parseTime=true&charset=utf8mb4&collation=utf8mb4_0900_ai_ci"
+	}
+	return dsn
+}
+
+// ============================================================================
+// ROUTER SETUP
+// ============================================================================
+
+// setupRouter configures the Gin router with all routes
+func setupRouter() {
+	// Set Gin mode based on environment
 	if os.Getenv("LOG_LEVEL") == "info" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -176,23 +162,7 @@ func main() {
 	r.GET("/health", healthCheck)
 
 	// API routes
-	api := r.Group("/api/v1")
-	{
-		api.GET("/services", getServices)
-		api.GET("/services/search", searchServices)
-		api.POST("/services", createService)
-		api.GET("/services/:id", getService)
-		api.PUT("/services/:id", updateService)
-		api.DELETE("/services/:id", deleteService)
-
-		api.GET("/services/:id/versions", getVersions)
-		api.POST("/services/:id/versions", createVersion)
-	}
-
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
+	setupAPIRoutes(r)
 
 	// Set up database cleanup before starting server
 	defer func() {
@@ -201,11 +171,117 @@ func main() {
 		}
 	}()
 
+	// Start server
+	startServerWithRouter(r)
+}
+
+// setupAPIRoutes configures all API routes
+func setupAPIRoutes(r *gin.Engine) {
+	api := r.Group("/api/v1")
+	{
+		// Service routes
+		api.GET("/services", getServices)
+		api.GET("/services/search", searchServices)
+		api.POST("/services", createService)
+		api.GET("/services/:id", getService)
+		api.PUT("/services/:id", updateService)
+		api.DELETE("/services/:id", deleteService)
+
+		// Version routes
+		api.GET("/services/:id/versions", getVersions)
+		api.POST("/services/:id/versions", createVersion)
+	}
+}
+
+// startServerWithRouter starts the HTTP server with the given router
+func startServerWithRouter(r *gin.Engine) {
+	port := getServerPort()
 	log.Printf("Server starting on port %s", port)
+	
 	if err := http.ListenAndServe(":"+port, r); err != nil {
 		log.Printf("Server failed to start: %v", err)
 	}
 }
+
+// getServerPort returns the server port from environment or default
+func getServerPort() string {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	return port
+}
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+// getPaginationParams extracts and validates pagination parameters from request
+func getPaginationParams(c *gin.Context) PaginationParams {
+	params := PaginationParams{
+		Page:     1,
+		PageSize: 10,
+	}
+	
+	// Parse page parameter
+	if pageStr := c.Query("page"); pageStr != "" {
+		if page, err := strconv.Atoi(pageStr); err == nil && page > 0 {
+			params.Page = page
+		}
+	}
+	
+	// Parse page_size parameter
+	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
+		if pageSize, err := strconv.Atoi(pageSizeStr); err == nil && pageSize > 0 {
+			params.PageSize = pageSize
+		}
+	}
+	
+	return params
+}
+
+// getSearchParams extracts and validates search parameters from request
+func getSearchParams(c *gin.Context) SearchParams {
+	params := SearchParams{
+		Query:    c.Query("q"),
+		Page:     1,
+		PageSize: 10,
+	}
+	
+	// Parse page parameter
+	if pageStr := c.Query("page"); pageStr != "" {
+		if page, err := strconv.Atoi(pageStr); err == nil && page > 0 {
+			params.Page = page
+		}
+	}
+	
+	// Parse page_size parameter
+	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
+		if pageSize, err := strconv.Atoi(pageSizeStr); err == nil && pageSize > 0 {
+			params.PageSize = pageSize
+		}
+	}
+	
+	return params
+}
+
+// calculatePagination calculates pagination metadata
+func calculatePagination(page, pageSize, total int) Pagination {
+	totalPages := (total + pageSize - 1) / pageSize // Ceiling division
+	
+	return Pagination{
+		Page:       page,
+		PageSize:   pageSize,
+		Total:      total,
+		TotalPages: totalPages,
+		HasNext:    page < totalPages,
+		HasPrev:    page > 1,
+	}
+}
+
+// ============================================================================
+// HEALTH CHECK HANDLER
+// ============================================================================
 
 // healthCheck godoc
 // @Summary Health check endpoint
@@ -217,6 +293,10 @@ func main() {
 func healthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
+
+// ============================================================================
+// SERVICE HANDLERS
+// ============================================================================
 
 // getServices godoc
 // @Summary Get all services
@@ -232,7 +312,7 @@ func healthCheck(c *gin.Context) {
 func getServices(c *gin.Context) {
 	// Get pagination parameters
 	params := getPaginationParams(c)
-
+	
 	// Validate pagination parameters
 	if params.Page < 1 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "page must be greater than 0"})
@@ -242,10 +322,10 @@ func getServices(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "page_size must be between 1 and 100"})
 		return
 	}
-
+	
 	// Calculate offset
 	offset := (params.Page - 1) * params.PageSize
-
+	
 	// Get total count
 	var total int
 	err := db.QueryRow("SELECT COUNT(*) FROM services").Scan(&total)
@@ -253,7 +333,7 @@ func getServices(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
+	
 	// Get paginated services
 	query := "SELECT id, name, slug, description, created_at, updated_at, versions_count FROM services ORDER BY created_at DESC LIMIT ? OFFSET ?"
 	rows, err := db.Query(query, params.PageSize, offset)
@@ -303,13 +383,13 @@ func getServices(c *gin.Context) {
 func searchServices(c *gin.Context) {
 	// Get search parameters
 	params := getSearchParams(c)
-
+	
 	// Validate search query
 	if params.Query == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "search query 'q' is required"})
 		return
 	}
-
+	
 	// Validate pagination parameters
 	if params.Page < 1 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "page must be greater than 0"})
@@ -319,10 +399,10 @@ func searchServices(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "page_size must be between 1 and 100"})
 		return
 	}
-
+	
 	// Calculate offset
 	offset := (params.Page - 1) * params.PageSize
-
+	
 	// Get total count for search results
 	countQuery := "SELECT COUNT(*) FROM services WHERE MATCH(name, description) AGAINST(? IN NATURAL LANGUAGE MODE)"
 	var total int
@@ -331,7 +411,7 @@ func searchServices(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
+	
 	// Get paginated search results
 	searchQuery := `
 		SELECT id, name, slug, description, created_at, updated_at, versions_count 
@@ -339,7 +419,7 @@ func searchServices(c *gin.Context) {
 		WHERE MATCH(name, description) AGAINST(? IN NATURAL LANGUAGE MODE)
 		ORDER BY MATCH(name, description) AGAINST(? IN NATURAL LANGUAGE MODE) DESC, created_at DESC
 		LIMIT ? OFFSET ?`
-
+	
 	rows, err := db.Query(searchQuery, params.Query, params.Query, params.PageSize, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -498,6 +578,10 @@ func deleteService(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Service deleted"})
 }
 
+// ============================================================================
+// VERSION HANDLERS
+// ============================================================================
+
 // getVersions godoc
 // @Summary Get versions for a service
 // @Description Get a paginated list of versions for a specific service
@@ -512,10 +596,10 @@ func deleteService(c *gin.Context) {
 // @Router /services/{id}/versions [get]
 func getVersions(c *gin.Context) {
 	serviceID := c.Param("id")
-
+	
 	// Get pagination parameters
 	params := getPaginationParams(c)
-
+	
 	// Validate pagination parameters
 	if params.Page < 1 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "page must be greater than 0"})
@@ -525,10 +609,10 @@ func getVersions(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "page_size must be between 1 and 100"})
 		return
 	}
-
+	
 	// Calculate offset
 	offset := (params.Page - 1) * params.PageSize
-
+	
 	// Get total count for this service
 	var total int
 	err := db.QueryRow("SELECT COUNT(*) FROM versions WHERE service_id = ?", serviceID).Scan(&total)
@@ -536,7 +620,7 @@ func getVersions(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
+	
 	// Get paginated versions
 	query := "SELECT id, service_id, semver, status, changelog, created_at FROM versions WHERE service_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?"
 	rows, err := db.Query(query, serviceID, params.PageSize, offset)
