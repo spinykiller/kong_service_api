@@ -225,9 +225,9 @@ func TestGetServicesIntegration(t *testing.T) {
 
 				if tt.expectedCount > 0 {
 					data, ok := response["data"].([]interface{})
-				if !ok {
-					data = []interface{}{}
-				}
+					if !ok {
+						data = []interface{}{}
+					}
 					assert.Len(t, data, tt.expectedCount)
 				}
 
