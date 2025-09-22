@@ -50,7 +50,7 @@ func CreateVersion(version *models.Version) error {
 	if err != nil {
 		return err
 	}
-	
+
 	// Track if transaction was committed
 	committed := false
 	defer func() {
@@ -79,7 +79,7 @@ func CreateVersion(version *models.Version) error {
 	if err != nil {
 		return err
 	}
-	
+
 	committed = true
 	return nil
 }
