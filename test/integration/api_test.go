@@ -1,8 +1,7 @@
-package main
+package integration
 
 import (
 	"bytes"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,11 +13,13 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/yashjain/konnect/internal/database"
+	"github.com/yashjain/konnect/internal/handlers"
+	"github.com/yashjain/konnect/internal/models"
 )
 
-var testDB *sql.DB
-
-func TestMainIntegration(m *testing.M) {
+func TestMain(m *testing.M) {
 	// Setup test database
 	setupTestDB()
 
@@ -38,18 +39,13 @@ func setupTestDB() {
 		dsn = "app:app@tcp(127.0.0.1:3306)/servicesdb_test?parseTime=true&charset=utf8mb4&collation=utf8mb4_0900_ai_ci"
 	}
 
-	var err error
-	testDB, err = sql.Open("mysql", dsn)
-	if err != nil {
+	// Set environment variable for database package
+	_ = os.Setenv("MYSQL_DSN", dsn)
+
+	// Initialize database
+	if err := database.Init(); err != nil {
 		panic(fmt.Sprintf("Failed to connect to test database: %v", err))
 	}
-
-	if err = testDB.Ping(); err != nil {
-		panic(fmt.Sprintf("Failed to ping test database: %v", err))
-	}
-
-	// Set global db variable for tests
-	db = testDB
 
 	// Create tables
 	createTestTables()
@@ -59,11 +55,11 @@ func setupTestDB() {
 }
 
 func cleanupTestDB() {
-	if testDB != nil {
+	if database.DB != nil {
 		// Clean up test data
-		_, _ = testDB.Exec("DELETE FROM versions")
-		_, _ = testDB.Exec("DELETE FROM services")
-		_ = testDB.Close()
+		_, _ = database.DB.Exec("DELETE FROM versions")
+		_, _ = database.DB.Exec("DELETE FROM services")
+		_ = database.Close()
 	}
 }
 
@@ -101,25 +97,25 @@ func createTestTables() {
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 	`
 
-	_, _ = testDB.Exec(servicesSQL)
-	_, _ = testDB.Exec(versionsSQL)
+	_, _ = database.DB.Exec(servicesSQL)
+	_, _ = database.DB.Exec(versionsSQL)
 }
 
 func seedTestData() {
 	// Insert test services
-	services := []Service{
+	services := []models.Service{
 		{ID: "service-1", Name: "Test Service 1", Slug: "test-service-1", Description: "First test service"},
 		{ID: "service-2", Name: "Test Service 2", Slug: "test-service-2", Description: "Second test service"},
 		{ID: "service-3", Name: "Notification Service", Slug: "notification-service", Description: "Service for sending notifications"},
 	}
 
 	for _, service := range services {
-		_, _ = testDB.Exec("INSERT INTO services (id, name, slug, description) VALUES (?, ?, ?, ?)",
+		_, _ = database.DB.Exec("INSERT INTO services (id, name, slug, description) VALUES (?, ?, ?, ?)",
 			service.ID, service.Name, service.Slug, service.Description)
 	}
 
 	// Insert test versions
-	versions := []Version{
+	versions := []models.Version{
 		{ID: "version-1", ServiceID: "service-1", Semver: "1.0.0", Status: "released", Changelog: "Initial release"},
 		{ID: "version-2", ServiceID: "service-1", Semver: "1.1.0", Status: "released", Changelog: "Minor update"},
 		{ID: "version-3", ServiceID: "service-2", Semver: "0.1.0", Status: "draft", Changelog: "Work in progress"},
@@ -127,12 +123,12 @@ func seedTestData() {
 	}
 
 	for _, version := range versions {
-		_, _ = testDB.Exec("INSERT INTO versions (id, service_id, semver, status, changelog) VALUES (?, ?, ?, ?, ?)",
+		_, _ = database.DB.Exec("INSERT INTO versions (id, service_id, semver, status, changelog) VALUES (?, ?, ?, ?, ?)",
 			version.ID, version.ServiceID, version.Semver, version.Status, version.Changelog)
 	}
 
 	// Update versions_count
-	_, _ = testDB.Exec("UPDATE services SET versions_count = (SELECT COUNT(*) FROM versions WHERE service_id = services.id)")
+	_, _ = database.DB.Exec("UPDATE services SET versions_count = (SELECT COUNT(*) FROM versions WHERE service_id = services.id)")
 }
 
 func setupTestRouter() *gin.Engine {
@@ -140,15 +136,15 @@ func setupTestRouter() *gin.Engine {
 	router := gin.New()
 
 	// Add routes
-	router.GET("/health", healthCheck)
-	router.GET("/api/v1/services", getServices)
-	router.GET("/api/v1/services/search", searchServices)
-	router.POST("/api/v1/services", createService)
-	router.GET("/api/v1/services/:id", getService)
-	router.PUT("/api/v1/services/:id", updateService)
-	router.DELETE("/api/v1/services/:id", deleteService)
-	router.GET("/api/v1/services/:id/versions", getVersions)
-	router.POST("/api/v1/services/:id/versions", createVersion)
+	router.GET("/health", handlers.HealthCheck)
+	router.GET("/api/v1/services", handlers.GetServices)
+	router.GET("/api/v1/services/search", handlers.SearchServices)
+	router.POST("/api/v1/services", handlers.CreateService)
+	router.GET("/api/v1/services/:id", handlers.GetService)
+	router.PUT("/api/v1/services/:id", handlers.UpdateService)
+	router.DELETE("/api/v1/services/:id", handlers.DeleteService)
+	router.GET("/api/v1/services/:id/versions", handlers.GetVersions)
+	router.POST("/api/v1/services/:id/versions", handlers.CreateVersion)
 
 	return router
 }
@@ -212,16 +208,16 @@ func TestGetServicesIntegration(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			if tt.expectedStatus == http.StatusOK {
-				var response PaginatedResponse
+				var response map[string]interface{}
 				err := json.Unmarshal(w.Body.Bytes(), &response)
 				require.NoError(t, err)
 
 				if tt.expectedCount > 0 {
-					services := response.Data.([]interface{})
-					assert.Len(t, services, tt.expectedCount)
+					data := response["data"].([]interface{})
+					assert.Len(t, data, tt.expectedCount)
 				}
 
-				assert.NotNil(t, response.Pagination)
+				assert.NotNil(t, response["pagination"])
 			}
 		})
 	}
@@ -277,13 +273,13 @@ func TestSearchServicesIntegration(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			if tt.expectedStatus == http.StatusOK {
-				var response PaginatedResponse
+				var response map[string]interface{}
 				err := json.Unmarshal(w.Body.Bytes(), &response)
 				require.NoError(t, err)
 
-				services := response.Data.([]interface{})
-				assert.Len(t, services, tt.expectedCount)
-				assert.NotNil(t, response.Pagination)
+				data := response["data"].([]interface{})
+				assert.Len(t, data, tt.expectedCount)
+				assert.NotNil(t, response["pagination"])
 			}
 		})
 	}
@@ -294,12 +290,12 @@ func TestCreateServiceIntegration(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		serviceData    Service
+		serviceData    models.Service
 		expectedStatus int
 	}{
 		{
 			name: "valid service",
-			serviceData: Service{
+			serviceData: models.Service{
 				Name:        "New Test Service",
 				Slug:        "new-test-service",
 				Description: "A new test service",
@@ -308,7 +304,7 @@ func TestCreateServiceIntegration(t *testing.T) {
 		},
 		{
 			name: "service with duplicate name",
-			serviceData: Service{
+			serviceData: models.Service{
 				Name:        "Test Service 1", // Already exists
 				Slug:        "duplicate-service",
 				Description: "Duplicate service",
@@ -317,7 +313,7 @@ func TestCreateServiceIntegration(t *testing.T) {
 		},
 		{
 			name: "service with duplicate slug",
-			serviceData: Service{
+			serviceData: models.Service{
 				Name:        "Unique Service",
 				Slug:        "test-service-1", // Already exists
 				Description: "Duplicate slug service",
@@ -338,7 +334,7 @@ func TestCreateServiceIntegration(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			if tt.expectedStatus == http.StatusCreated {
-				var response Service
+				var response models.Service
 				err := json.Unmarshal(w.Body.Bytes(), &response)
 				require.NoError(t, err)
 				assert.NotEmpty(t, response.ID)
@@ -379,7 +375,7 @@ func TestGetServiceIntegration(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			if tt.expectedStatus == http.StatusOK {
-				var response Service
+				var response models.Service
 				err := json.Unmarshal(w.Body.Bytes(), &response)
 				require.NoError(t, err)
 				assert.Equal(t, tt.serviceID, response.ID)
@@ -430,13 +426,13 @@ func TestGetVersionsIntegration(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			if tt.expectedStatus == http.StatusOK {
-				var response PaginatedResponse
+				var response map[string]interface{}
 				err := json.Unmarshal(w.Body.Bytes(), &response)
 				require.NoError(t, err)
 
-				versions := response.Data.([]interface{})
-				assert.Len(t, versions, tt.expectedCount)
-				assert.NotNil(t, response.Pagination)
+				data := response["data"].([]interface{})
+				assert.Len(t, data, tt.expectedCount)
+				assert.NotNil(t, response["pagination"])
 			}
 		})
 	}
@@ -448,13 +444,13 @@ func TestCreateVersionIntegration(t *testing.T) {
 	tests := []struct {
 		name           string
 		serviceID      string
-		versionData    Version
+		versionData    models.Version
 		expectedStatus int
 	}{
 		{
 			name:      "valid version",
 			serviceID: "service-1",
-			versionData: Version{
+			versionData: models.Version{
 				Semver:    "1.2.0",
 				Status:    "released",
 				Changelog: "New feature release",
@@ -464,7 +460,7 @@ func TestCreateVersionIntegration(t *testing.T) {
 		{
 			name:      "version for non-existing service",
 			serviceID: "non-existing",
-			versionData: Version{
+			versionData: models.Version{
 				Semver:    "1.0.0",
 				Status:    "released",
 				Changelog: "Test version",
@@ -485,7 +481,7 @@ func TestCreateVersionIntegration(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			if tt.expectedStatus == http.StatusCreated {
-				var response Version
+				var response models.Version
 				err := json.Unmarshal(w.Body.Bytes(), &response)
 				require.NoError(t, err)
 				assert.NotEmpty(t, response.ID)

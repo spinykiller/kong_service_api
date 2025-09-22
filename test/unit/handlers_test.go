@@ -1,4 +1,4 @@
-package main
+package unit
 
 import (
 	"encoding/json"
@@ -9,12 +9,17 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/yashjain/konnect/internal/handlers"
+	"github.com/yashjain/konnect/internal/models"
+	"github.com/yashjain/konnect/pkg/types"
+	"github.com/yashjain/konnect/pkg/utils"
 )
 
 func TestHealthCheck(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/health", healthCheck)
+	router.GET("/health", handlers.HealthCheck)
 
 	req, _ := http.NewRequest("GET", "/health", nil)
 	w := httptest.NewRecorder()
@@ -67,7 +72,7 @@ func TestGetPaginationParams(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			router := gin.New()
 			router.GET("/test", func(c *gin.Context) {
-				params := getPaginationParams(c)
+				params := utils.GetPaginationParams(c)
 				c.JSON(http.StatusOK, gin.H{
 					"page":      params.Page,
 					"page_size": params.PageSize,
@@ -126,7 +131,7 @@ func TestGetSearchParams(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			router := gin.New()
 			router.GET("/test", func(c *gin.Context) {
-				params := getSearchParams(c)
+				params := utils.GetSearchParams(c)
 				c.JSON(http.StatusOK, gin.H{
 					"query":     params.Query,
 					"page":      params.Page,
@@ -156,14 +161,14 @@ func TestCalculatePagination(t *testing.T) {
 		page     int
 		pageSize int
 		total    int
-		expected Pagination
+		expected types.Pagination
 	}{
 		{
 			name:     "first page",
 			page:     1,
 			pageSize: 10,
 			total:    25,
-			expected: Pagination{
+			expected: types.Pagination{
 				Page:       1,
 				PageSize:   10,
 				Total:      25,
@@ -177,7 +182,7 @@ func TestCalculatePagination(t *testing.T) {
 			page:     2,
 			pageSize: 10,
 			total:    25,
-			expected: Pagination{
+			expected: types.Pagination{
 				Page:       2,
 				PageSize:   10,
 				Total:      25,
@@ -191,7 +196,7 @@ func TestCalculatePagination(t *testing.T) {
 			page:     3,
 			pageSize: 10,
 			total:    25,
-			expected: Pagination{
+			expected: types.Pagination{
 				Page:       3,
 				PageSize:   10,
 				Total:      25,
@@ -205,7 +210,7 @@ func TestCalculatePagination(t *testing.T) {
 			page:     1,
 			pageSize: 10,
 			total:    10,
-			expected: Pagination{
+			expected: types.Pagination{
 				Page:       1,
 				PageSize:   10,
 				Total:      10,
@@ -219,7 +224,7 @@ func TestCalculatePagination(t *testing.T) {
 			page:     1,
 			pageSize: 10,
 			total:    0,
-			expected: Pagination{
+			expected: types.Pagination{
 				Page:       1,
 				PageSize:   10,
 				Total:      0,
@@ -232,14 +237,14 @@ func TestCalculatePagination(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := calculatePagination(tt.page, tt.pageSize, tt.total)
+			result := utils.CalculatePagination(tt.page, tt.pageSize, tt.total)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
 func TestServiceStruct(t *testing.T) {
-	service := Service{
+	service := models.Service{
 		ID:            "test-id",
 		Name:          "Test Service",
 		Slug:          "test-service",
@@ -253,14 +258,14 @@ func TestServiceStruct(t *testing.T) {
 	jsonData, err := json.Marshal(service)
 	require.NoError(t, err)
 
-	var unmarshaled Service
+	var unmarshaled models.Service
 	err = json.Unmarshal(jsonData, &unmarshaled)
 	require.NoError(t, err)
 	assert.Equal(t, service, unmarshaled)
 }
 
 func TestVersionStruct(t *testing.T) {
-	version := Version{
+	version := models.Version{
 		ID:        "test-id",
 		ServiceID: "service-id",
 		Semver:    "1.0.0",
@@ -273,19 +278,19 @@ func TestVersionStruct(t *testing.T) {
 	jsonData, err := json.Marshal(version)
 	require.NoError(t, err)
 
-	var unmarshaled Version
+	var unmarshaled models.Version
 	err = json.Unmarshal(jsonData, &unmarshaled)
 	require.NoError(t, err)
 	assert.Equal(t, version, unmarshaled)
 }
 
 func TestPaginatedResponseStruct(t *testing.T) {
-	services := []Service{
+	services := []models.Service{
 		{ID: "1", Name: "Service 1"},
 		{ID: "2", Name: "Service 2"},
 	}
 
-	pagination := Pagination{
+	pagination := types.Pagination{
 		Page:       1,
 		PageSize:   10,
 		Total:      2,
@@ -294,7 +299,7 @@ func TestPaginatedResponseStruct(t *testing.T) {
 		HasPrev:    false,
 	}
 
-	response := PaginatedResponse{
+	response := types.PaginatedResponse{
 		Data:       services,
 		Pagination: pagination,
 	}
@@ -303,7 +308,7 @@ func TestPaginatedResponseStruct(t *testing.T) {
 	jsonData, err := json.Marshal(response)
 	require.NoError(t, err)
 
-	var unmarshaled PaginatedResponse
+	var unmarshaled types.PaginatedResponse
 	err = json.Unmarshal(jsonData, &unmarshaled)
 	require.NoError(t, err)
 	assert.Equal(t, response.Pagination, unmarshaled.Pagination)

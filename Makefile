@@ -34,10 +34,10 @@ dev:
 test: test-unit test-integration
 
 test-unit:
-	$(GOCMD) test -race -count=1 -run "TestHealthCheck|TestGetPaginationParams|TestGetSearchParams|TestCalculatePagination|TestServiceStruct|TestVersionStruct|TestPaginatedResponseStruct" ./cmd/api
+	$(GOCMD) test -race -count=1 ./test/unit/...
 
 test-integration: test-setup
-	TEST_MYSQL_DSN="$(TEST_DB_DSN)" $(GOCMD) test -race -count=1 -run "TestMainIntegration|TestHealthCheckIntegration|TestGetServicesIntegration|TestSearchServicesIntegration|TestCreateServiceIntegration|TestGetServiceIntegration|TestGetVersionsIntegration|TestCreateVersionIntegration" ./cmd/api
+	TEST_MYSQL_DSN="$(TEST_DB_DSN)" $(GOCMD) test -race -count=1 ./test/integration/...
 	$(MAKE) test-clean
 
 test-integration-docker:
@@ -45,7 +45,7 @@ test-integration-docker:
 	docker compose -f docker-compose.test.yml up -d mysql-test
 	@echo "Waiting for database to be ready..."
 	@sleep 10
-	TEST_MYSQL_DSN="app:app@tcp(127.0.0.1:3307)/servicesdb_test?parseTime=true&charset=utf8mb4&collation=utf8mb4_0900_ai_ci" $(GOCMD) test -race -count=1 -run "TestMainIntegration|TestHealthCheckIntegration|TestGetServicesIntegration|TestSearchServicesIntegration|TestCreateServiceIntegration|TestGetServiceIntegration|TestGetVersionsIntegration|TestCreateVersionIntegration" ./cmd/api
+	TEST_MYSQL_DSN="app:app@tcp(127.0.0.1:3307)/servicesdb_test?parseTime=true&charset=utf8mb4&collation=utf8mb4_0900_ai_ci" $(GOCMD) test -race -count=1 ./test/integration/...
 	@echo "Stopping test database..."
 	docker compose -f docker-compose.test.yml down
 
