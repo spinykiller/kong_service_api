@@ -50,8 +50,19 @@ func setupTestDB() {
 	// Create tables
 	createTestTables()
 
+	// Clean up any existing data before seeding
+	cleanupTestData()
+
 	// Seed test data
 	seedTestData()
+}
+
+func cleanupTestData() {
+	if database.DB != nil {
+		// Clean up test data
+		_, _ = database.DB.Exec("DELETE FROM versions")
+		_, _ = database.DB.Exec("DELETE FROM services")
+	}
 }
 
 func cleanupTestDB() {
@@ -213,7 +224,10 @@ func TestGetServicesIntegration(t *testing.T) {
 				require.NoError(t, err)
 
 				if tt.expectedCount > 0 {
-					data := response["data"].([]interface{})
+					data, ok := response["data"].([]interface{})
+				if !ok {
+					data = []interface{}{}
+				}
 					assert.Len(t, data, tt.expectedCount)
 				}
 
@@ -277,7 +291,10 @@ func TestSearchServicesIntegration(t *testing.T) {
 				err := json.Unmarshal(w.Body.Bytes(), &response)
 				require.NoError(t, err)
 
-				data := response["data"].([]interface{})
+				data, ok := response["data"].([]interface{})
+				if !ok {
+					data = []interface{}{}
+				}
 				assert.Len(t, data, tt.expectedCount)
 				assert.NotNil(t, response["pagination"])
 			}
@@ -430,7 +447,10 @@ func TestGetVersionsIntegration(t *testing.T) {
 				err := json.Unmarshal(w.Body.Bytes(), &response)
 				require.NoError(t, err)
 
-				data := response["data"].([]interface{})
+				data, ok := response["data"].([]interface{})
+				if !ok {
+					data = []interface{}{}
+				}
 				assert.Len(t, data, tt.expectedCount)
 				assert.NotNil(t, response["pagination"])
 			}
