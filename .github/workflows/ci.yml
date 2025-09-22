@@ -63,6 +63,11 @@ jobs:
         run: |
           goose -dir ./migrations mysql "$DB_DSN" up
 
+      - name: Create test database
+        run: |
+          mysql -h 127.0.0.1 -u app -papp -e "CREATE DATABASE IF NOT EXISTS servicesdb_test;"
+          goose -dir ./migrations mysql "app:app@tcp(127.0.0.1:3306)/servicesdb_test?parseTime=true&multiStatements=true" up
+
       - name: Generate Swagger docs
         run: swag init -g cmd/api/main.go -o docs
 
@@ -70,6 +75,8 @@ jobs:
         run: golangci-lint run
 
       - name: Test
+        env:
+          TEST_MYSQL_DSN: app:app@tcp(127.0.0.1:3306)/servicesdb_test?parseTime=true&charset=utf8mb4&collation=utf8mb4_0900_ai_ci
         run: go test -race ./...
 
   docker-image:
