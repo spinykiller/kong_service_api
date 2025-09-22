@@ -485,7 +485,7 @@ func TestCreateVersionIntegration(t *testing.T) {
 				Status:    "released",
 				Changelog: "Test version",
 			},
-			expectedStatus: http.StatusCreated, // Still creates, just with invalid service_id
+			expectedStatus: http.StatusInternalServerError, // Foreign key constraint violation
 		},
 	}
 

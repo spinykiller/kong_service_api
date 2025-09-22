@@ -50,9 +50,14 @@ func CreateVersion(version *models.Version) error {
 	if err != nil {
 		return err
 	}
+	
+	// Track if transaction was committed
+	committed := false
 	defer func() {
-		if err := tx.Rollback(); err != nil {
-			log.Printf("Error rolling back transaction: %v", err)
+		if !committed {
+			if err := tx.Rollback(); err != nil {
+				log.Printf("Error rolling back transaction: %v", err)
+			}
 		}
 	}()
 
@@ -70,5 +75,11 @@ func CreateVersion(version *models.Version) error {
 	}
 
 	// Commit the transaction
-	return tx.Commit()
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+	
+	committed = true
+	return nil
 }
