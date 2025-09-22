@@ -65,7 +65,9 @@ jobs:
 
       - name: Create test database
         run: |
-          mysql -h 127.0.0.1 -u app -papp -e "CREATE DATABASE IF NOT EXISTS servicesdb_test;"
+          mysql -h 127.0.0.1 -u root -proot -e "CREATE DATABASE IF NOT EXISTS servicesdb_test;"
+          mysql -h 127.0.0.1 -u root -proot -e "GRANT ALL PRIVILEGES ON servicesdb_test.* TO 'app'@'%';"
+          mysql -h 127.0.0.1 -u root -proot -e "FLUSH PRIVILEGES;"
           goose -dir ./migrations mysql "app:app@tcp(127.0.0.1:3306)/servicesdb_test?parseTime=true&multiStatements=true" up
 
       - name: Generate Swagger docs
